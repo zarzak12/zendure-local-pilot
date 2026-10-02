@@ -1,0 +1,543 @@
+# Zendure SolarFlow 4000 MIX PRO — estimation de l'état de santé (SOH) des packs
+#
+# L'API locale zenSDK n'expose AUCUN indicateur de santé : ni capacité réelle,
+# ni nombre de cycles, ni SOH. Ce package le RECONSTRUIT par la mesure :
+#
+#   1. puissance DC signée du pack   = tension x courant   (+ charge / - décharge)
+#   2. intégrale de cette puissance  = énergie DC échangée (Wh, compteur net)
+#   3. quand le SOC a varié d'au moins 25 points depuis le dernier repère :
+#          capacité réelle = énergie échangée / variation de SOC x 100
+#   4. santé = capacité réelle / capacité nominale du pack
+#
+# La mesure est lissée (30 % de la nouvelle estimation à chaque fois) et bornée
+# par un filtre de plausibilité : une valeur aberrante (capteur indisponible,
+# redémarrage de HA en plein cycle) est rejetée.
+#
+# ATTENTION : c'est une ESTIMATION, pas une donnée constructeur. Il faut un
+# premier cycle d'au moins 25 % de SOC pour obtenir une valeur, et plusieurs
+# cycles pour qu'elle se stabilise. Un écart de +/- 5 % est normal.
+
+input_number:
+  zendure_solarflow4000mix_pack_1_capacite_estimee:
+    name: Zendure pack 1 capacite estimee
+    min: 0
+    max: 20000
+    step: 1
+    unit_of_measurement: Wh
+    icon: mdi:battery-heart-variant
+    mode: box
+
+  zendure_solarflow4000mix_pack_1_soh_ancre_soc:
+    name: Zendure pack 1 repere SOC
+    # pas d'"initial" : la valeur doit survivre aux redémarrages de HA.
+    # Au tout premier démarrage HA retient min (-1), notre sentinelle "non posé".
+    min: -1
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_1_soh_ancre_energie:
+    name: Zendure pack 1 repere energie
+    min: -1000000
+    max: 1000000
+    step: 0.1
+    unit_of_measurement: Wh
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_2_capacite_estimee:
+    name: Zendure pack 2 capacite estimee
+    min: 0
+    max: 20000
+    step: 1
+    unit_of_measurement: Wh
+    icon: mdi:battery-heart-variant
+    mode: box
+
+  zendure_solarflow4000mix_pack_2_soh_ancre_soc:
+    name: Zendure pack 2 repere SOC
+    # pas d'"initial" : la valeur doit survivre aux redémarrages de HA.
+    # Au tout premier démarrage HA retient min (-1), notre sentinelle "non posé".
+    min: -1
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_2_soh_ancre_energie:
+    name: Zendure pack 2 repere energie
+    min: -1000000
+    max: 1000000
+    step: 0.1
+    unit_of_measurement: Wh
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_3_capacite_estimee:
+    name: Zendure pack 3 capacite estimee
+    min: 0
+    max: 20000
+    step: 1
+    unit_of_measurement: Wh
+    icon: mdi:battery-heart-variant
+    mode: box
+
+  zendure_solarflow4000mix_pack_3_soh_ancre_soc:
+    name: Zendure pack 3 repere SOC
+    # pas d'"initial" : la valeur doit survivre aux redémarrages de HA.
+    # Au tout premier démarrage HA retient min (-1), notre sentinelle "non posé".
+    min: -1
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_3_soh_ancre_energie:
+    name: Zendure pack 3 repere energie
+    min: -1000000
+    max: 1000000
+    step: 0.1
+    unit_of_measurement: Wh
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_4_capacite_estimee:
+    name: Zendure pack 4 capacite estimee
+    min: 0
+    max: 20000
+    step: 1
+    unit_of_measurement: Wh
+    icon: mdi:battery-heart-variant
+    mode: box
+
+  zendure_solarflow4000mix_pack_4_soh_ancre_soc:
+    name: Zendure pack 4 repere SOC
+    # pas d'"initial" : la valeur doit survivre aux redémarrages de HA.
+    # Au tout premier démarrage HA retient min (-1), notre sentinelle "non posé".
+    min: -1
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+    icon: mdi:map-marker
+    mode: box
+
+  zendure_solarflow4000mix_pack_4_soh_ancre_energie:
+    name: Zendure pack 4 repere energie
+    min: -1000000
+    max: 1000000
+    step: 0.1
+    unit_of_measurement: Wh
+    icon: mdi:map-marker
+    mode: box
+
+template:
+  - sensor:
+      # ---- Puissance DC signée : + charge / - décharge ----
+      # packData.power est une magnitude, le sens vient du signe du courant.
+      - name: Zendure pack 1 puissance DC
+        unique_id: zendure_solarflow4000mix_pack_1_puissance_dc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_puissance_dc
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: >-
+          {{ has_value('sensor.zendure_solarflow4000mix_pack_1_tension')
+             and has_value('sensor.zendure_solarflow4000mix_pack_1_courant') }}
+        state: >-
+          {{ (states('sensor.zendure_solarflow4000mix_pack_1_tension') | float(0)
+              * states('sensor.zendure_solarflow4000mix_pack_1_courant') | float(0)) | round(1) }}
+
+      - name: Zendure pack 2 puissance DC
+        unique_id: zendure_solarflow4000mix_pack_2_puissance_dc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_puissance_dc
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: >-
+          {{ has_value('sensor.zendure_solarflow4000mix_pack_2_tension')
+             and has_value('sensor.zendure_solarflow4000mix_pack_2_courant') }}
+        state: >-
+          {{ (states('sensor.zendure_solarflow4000mix_pack_2_tension') | float(0)
+              * states('sensor.zendure_solarflow4000mix_pack_2_courant') | float(0)) | round(1) }}
+
+      - name: Zendure pack 3 puissance DC
+        unique_id: zendure_solarflow4000mix_pack_3_puissance_dc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_puissance_dc
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: >-
+          {{ has_value('sensor.zendure_solarflow4000mix_pack_3_tension')
+             and has_value('sensor.zendure_solarflow4000mix_pack_3_courant') }}
+        state: >-
+          {{ (states('sensor.zendure_solarflow4000mix_pack_3_tension') | float(0)
+              * states('sensor.zendure_solarflow4000mix_pack_3_courant') | float(0)) | round(1) }}
+
+      - name: Zendure pack 4 puissance DC
+        unique_id: zendure_solarflow4000mix_pack_4_puissance_dc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_puissance_dc
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: >-
+          {{ has_value('sensor.zendure_solarflow4000mix_pack_4_tension')
+             and has_value('sensor.zendure_solarflow4000mix_pack_4_courant') }}
+        state: >-
+          {{ (states('sensor.zendure_solarflow4000mix_pack_4_tension') | float(0)
+              * states('sensor.zendure_solarflow4000mix_pack_4_courant') | float(0)) | round(1) }}
+
+      # ---- Capacité nominale d'un pack, déduite de son type ----
+      - name: Zendure pack 1 capacite nominale
+        unique_id: zendure_solarflow4000mix_pack_1_capacite_nominale
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_capacite_nominale
+        unit_of_measurement: kWh
+        device_class: energy_storage
+        state_class: measurement
+        availability: >-
+          {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 1 }}
+        state: >-
+          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
+            {% set table = { 70: 8.00 } %}
+          {% else %}
+            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
+          {% endif %}
+          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].packType | int(0) %}
+          {{ table.get(t, 0) }}
+
+      - name: Zendure pack 2 capacite nominale
+        unique_id: zendure_solarflow4000mix_pack_2_capacite_nominale
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_capacite_nominale
+        unit_of_measurement: kWh
+        device_class: energy_storage
+        state_class: measurement
+        availability: >-
+          {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 2 }}
+        state: >-
+          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
+            {% set table = { 70: 8.00 } %}
+          {% else %}
+            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
+          {% endif %}
+          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].packType | int(0) %}
+          {{ table.get(t, 0) }}
+
+      - name: Zendure pack 3 capacite nominale
+        unique_id: zendure_solarflow4000mix_pack_3_capacite_nominale
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_capacite_nominale
+        unit_of_measurement: kWh
+        device_class: energy_storage
+        state_class: measurement
+        availability: >-
+          {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 3 }}
+        state: >-
+          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
+            {% set table = { 70: 8.00 } %}
+          {% else %}
+            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
+          {% endif %}
+          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].packType | int(0) %}
+          {{ table.get(t, 0) }}
+
+      - name: Zendure pack 4 capacite nominale
+        unique_id: zendure_solarflow4000mix_pack_4_capacite_nominale
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_capacite_nominale
+        unit_of_measurement: kWh
+        device_class: energy_storage
+        state_class: measurement
+        availability: >-
+          {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 4 }}
+        state: >-
+          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
+            {% set table = { 70: 8.00 } %}
+          {% else %}
+            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
+          {% endif %}
+          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].packType | int(0) %}
+          {{ table.get(t, 0) }}
+
+      # ---- État de santé estimé ----
+      - name: Zendure pack 1 sante
+        unique_id: zendure_solarflow4000mix_pack_1_sante
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_sante
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:battery-heart-variant
+        availability: >-
+          {{ states('input_number.zendure_solarflow4000mix_pack_1_capacite_estimee') | float(0) > 0
+             and states('sensor.zendure_solarflow4000mix_pack_1_capacite_nominale') | float(0) > 0 }}
+        state: >-
+          {{ (states('input_number.zendure_solarflow4000mix_pack_1_capacite_estimee') | float(0)
+              / (states('sensor.zendure_solarflow4000mix_pack_1_capacite_nominale') | float(1) * 1000)
+              * 100) | round(1) }}
+        attributes:
+          capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_1_capacite_estimee') | float(0) | round(0) }}"
+          capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_1_capacite_nominale') | float(0) * 1000) | round(0) }}"
+
+      - name: Zendure pack 2 sante
+        unique_id: zendure_solarflow4000mix_pack_2_sante
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_sante
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:battery-heart-variant
+        availability: >-
+          {{ states('input_number.zendure_solarflow4000mix_pack_2_capacite_estimee') | float(0) > 0
+             and states('sensor.zendure_solarflow4000mix_pack_2_capacite_nominale') | float(0) > 0 }}
+        state: >-
+          {{ (states('input_number.zendure_solarflow4000mix_pack_2_capacite_estimee') | float(0)
+              / (states('sensor.zendure_solarflow4000mix_pack_2_capacite_nominale') | float(1) * 1000)
+              * 100) | round(1) }}
+        attributes:
+          capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_2_capacite_estimee') | float(0) | round(0) }}"
+          capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_2_capacite_nominale') | float(0) * 1000) | round(0) }}"
+
+      - name: Zendure pack 3 sante
+        unique_id: zendure_solarflow4000mix_pack_3_sante
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_sante
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:battery-heart-variant
+        availability: >-
+          {{ states('input_number.zendure_solarflow4000mix_pack_3_capacite_estimee') | float(0) > 0
+             and states('sensor.zendure_solarflow4000mix_pack_3_capacite_nominale') | float(0) > 0 }}
+        state: >-
+          {{ (states('input_number.zendure_solarflow4000mix_pack_3_capacite_estimee') | float(0)
+              / (states('sensor.zendure_solarflow4000mix_pack_3_capacite_nominale') | float(1) * 1000)
+              * 100) | round(1) }}
+        attributes:
+          capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_3_capacite_estimee') | float(0) | round(0) }}"
+          capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_3_capacite_nominale') | float(0) * 1000) | round(0) }}"
+
+      - name: Zendure pack 4 sante
+        unique_id: zendure_solarflow4000mix_pack_4_sante
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_sante
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:battery-heart-variant
+        availability: >-
+          {{ states('input_number.zendure_solarflow4000mix_pack_4_capacite_estimee') | float(0) > 0
+             and states('sensor.zendure_solarflow4000mix_pack_4_capacite_nominale') | float(0) > 0 }}
+        state: >-
+          {{ (states('input_number.zendure_solarflow4000mix_pack_4_capacite_estimee') | float(0)
+              / (states('sensor.zendure_solarflow4000mix_pack_4_capacite_nominale') | float(1) * 1000)
+              * 100) | round(1) }}
+        attributes:
+          capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_4_capacite_estimee') | float(0) | round(0) }}"
+          capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_4_capacite_nominale') | float(0) * 1000) | round(0) }}"
+
+      # ---- Avancement de la mesure en cours (tous packs) ----
+      - name: Zendure mesure sante progression
+        unique_id: zendure_solarflow4000mix_mesure_sante_progression
+        default_entity_id: sensor.zendure_solarflow4000mix_mesure_sante_progression
+        unit_of_measurement: "%"
+        icon: mdi:progress-helper
+        state: >-
+          {% set ns = namespace(v = 0) %}
+          {% set a = states('input_number.zendure_solarflow4000mix_pack_1_soh_ancre_soc') | float(-1) %}
+          {% if a >= 0 and has_value('sensor.zendure_solarflow4000mix_pack_1_soc') %}
+            {% set p = [ (states('sensor.zendure_solarflow4000mix_pack_1_soc') | float(0) - a) | abs / 25 * 100, 100 ] | min %}
+            {% set ns.v = [ns.v, p] | max %}
+          {% endif %}
+          {% set a = states('input_number.zendure_solarflow4000mix_pack_2_soh_ancre_soc') | float(-1) %}
+          {% if a >= 0 and has_value('sensor.zendure_solarflow4000mix_pack_2_soc') %}
+            {% set p = [ (states('sensor.zendure_solarflow4000mix_pack_2_soc') | float(0) - a) | abs / 25 * 100, 100 ] | min %}
+            {% set ns.v = [ns.v, p] | max %}
+          {% endif %}
+          {% set a = states('input_number.zendure_solarflow4000mix_pack_3_soh_ancre_soc') | float(-1) %}
+          {% if a >= 0 and has_value('sensor.zendure_solarflow4000mix_pack_3_soc') %}
+            {% set p = [ (states('sensor.zendure_solarflow4000mix_pack_3_soc') | float(0) - a) | abs / 25 * 100, 100 ] | min %}
+            {% set ns.v = [ns.v, p] | max %}
+          {% endif %}
+          {% set a = states('input_number.zendure_solarflow4000mix_pack_4_soh_ancre_soc') | float(-1) %}
+          {% if a >= 0 and has_value('sensor.zendure_solarflow4000mix_pack_4_soc') %}
+            {% set p = [ (states('sensor.zendure_solarflow4000mix_pack_4_soc') | float(0) - a) | abs / 25 * 100, 100 ] | min %}
+            {% set ns.v = [ns.v, p] | max %}
+          {% endif %}
+          {{ ns.v | round(0) }}
+
+      # ---- Synthèse tous packs ----
+      - name: Zendure sante minimale
+        unique_id: zendure_solarflow4000mix_sante_min
+        default_entity_id: sensor.zendure_solarflow4000mix_sante_min
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:battery-heart-variant
+        availability: >-
+          {{ [states('sensor.zendure_solarflow4000mix_pack_1_sante'), states('sensor.zendure_solarflow4000mix_pack_2_sante'), states('sensor.zendure_solarflow4000mix_pack_3_sante'), states('sensor.zendure_solarflow4000mix_pack_4_sante')]
+             | select('is_number') | list | count > 0 }}
+        state: >-
+          {% set v = [states('sensor.zendure_solarflow4000mix_pack_1_sante'), states('sensor.zendure_solarflow4000mix_pack_2_sante'), states('sensor.zendure_solarflow4000mix_pack_3_sante'), states('sensor.zendure_solarflow4000mix_pack_4_sante')]
+             | select('is_number') | map('float') | list %}
+          {{ (v | min) | round(1) if v | count > 0 else 0 }}
+        attributes:
+          packs_mesures: >-
+            {{ [states('sensor.zendure_solarflow4000mix_pack_1_sante'), states('sensor.zendure_solarflow4000mix_pack_2_sante'), states('sensor.zendure_solarflow4000mix_pack_3_sante'), states('sensor.zendure_solarflow4000mix_pack_4_sante')]
+               | select('is_number') | list | count }}
+
+      - name: Zendure capacite nominale totale
+        unique_id: zendure_solarflow4000mix_capacite_nominale_totale
+        default_entity_id: sensor.zendure_solarflow4000mix_capacite_nominale_totale
+        unit_of_measurement: kWh
+        device_class: energy_storage
+        state_class: measurement
+        availability: "{{ has_value('sensor.zendure_solarflow4000mix_pack_1_capacite_nominale') }}"
+        state: >-
+          {{ [states('sensor.zendure_solarflow4000mix_pack_1_capacite_nominale'), states('sensor.zendure_solarflow4000mix_pack_2_capacite_nominale'), states('sensor.zendure_solarflow4000mix_pack_3_capacite_nominale'), states('sensor.zendure_solarflow4000mix_pack_4_capacite_nominale')]
+             | select('is_number') | map('float') | sum | round(2) }}
+
+sensor:
+  # ---- Énergie DC nette échangée par pack (compteur signé) ----
+  # max_sub_interval force l'intégration même quand la puissance ne bouge pas.
+  - platform: integration
+    name: Zendure SolarFlow4000Mix pack 1 energie DC
+    unique_id: zendure_solarflow4000mix_pack_1_energie_dc
+    source: sensor.zendure_solarflow4000mix_pack_1_puissance_dc
+    method: trapezoidal
+    unit_time: h
+    round: 2
+    max_sub_interval:
+      minutes: 2
+
+  - platform: integration
+    name: Zendure SolarFlow4000Mix pack 2 energie DC
+    unique_id: zendure_solarflow4000mix_pack_2_energie_dc
+    source: sensor.zendure_solarflow4000mix_pack_2_puissance_dc
+    method: trapezoidal
+    unit_time: h
+    round: 2
+    max_sub_interval:
+      minutes: 2
+
+  - platform: integration
+    name: Zendure SolarFlow4000Mix pack 3 energie DC
+    unique_id: zendure_solarflow4000mix_pack_3_energie_dc
+    source: sensor.zendure_solarflow4000mix_pack_3_puissance_dc
+    method: trapezoidal
+    unit_time: h
+    round: 2
+    max_sub_interval:
+      minutes: 2
+
+  - platform: integration
+    name: Zendure SolarFlow4000Mix pack 4 energie DC
+    unique_id: zendure_solarflow4000mix_pack_4_energie_dc
+    source: sensor.zendure_solarflow4000mix_pack_4_puissance_dc
+    method: trapezoidal
+    unit_time: h
+    round: 2
+    max_sub_interval:
+      minutes: 2
+
+automation:
+  - id: zendure_solarflow4000mix_estimation_sante
+    alias: Zendure SolarFlow4000Mix estimation de la sante des packs
+    description: >-
+      Mesure la capacité réelle de chaque pack en comparant l'énergie DC
+      échangée à la variation de SOC correspondante.
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_pack_1_soc
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_pack_2_soc
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_pack_3_soc
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_pack_4_soc
+    actions:
+      - repeat:
+          for_each: ["1", "2", "3", "4"]
+          sequence:
+            - variables:
+                e_soc: "sensor.zendure_solarflow4000mix_pack_{{ repeat.item }}_soc"
+                e_nrj: "sensor.zendure_solarflow4000mix_pack_{{ repeat.item }}_energie_dc"
+                e_nom: "sensor.zendure_solarflow4000mix_pack_{{ repeat.item }}_capacite_nominale"
+                e_cap: "input_number.zendure_solarflow4000mix_pack_{{ repeat.item }}_capacite_estimee"
+                e_asoc: "input_number.zendure_solarflow4000mix_pack_{{ repeat.item }}_soh_ancre_soc"
+                e_anrj: "input_number.zendure_solarflow4000mix_pack_{{ repeat.item }}_soh_ancre_energie"
+            - if:
+                - condition: template
+                  value_template: "{{ has_value(e_soc) and has_value(e_nrj) }}"
+              then:
+                - variables:
+                    soc: "{{ states(e_soc) | float(0) }}"
+                    nrj: "{{ states(e_nrj) | float(0) }}"
+                    a_soc: "{{ states(e_asoc) | float(-1) }}"
+                    a_nrj: "{{ states(e_anrj) | float(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ a_soc < 0 }}"
+                  then:
+                    # Pas encore de repère : on en pose un.
+                    - action: input_number.set_value
+                      target:
+                        entity_id: "{{ e_asoc }}"
+                      data:
+                        value: "{{ soc }}"
+                    - action: input_number.set_value
+                      target:
+                        entity_id: "{{ e_anrj }}"
+                      data:
+                        value: "{{ nrj }}"
+                  else:
+                    - if:
+                        - condition: template
+                          value_template: "{{ (soc - a_soc) | abs >= 25 }}"
+                      then:
+                        - variables:
+                            cap: "{{ (nrj - a_nrj) / (soc - a_soc) * 100 }}"
+                            nom: "{{ states(e_nom) | float(0) * 1000 }}"
+                            cur: "{{ states(e_cap) | float(0) }}"
+                        - if:
+                            - condition: template
+                              # filtre de plausibilité : entre 40 % et 130 % du nominal
+                              value_template: >-
+                                {{ nom > 0 and cap > nom * 0.4 and cap < nom * 1.3 }}
+                          then:
+                            - action: input_number.set_value
+                              target:
+                                entity_id: "{{ e_cap }}"
+                              data:
+                                # premier passage : valeur brute, ensuite lissage 70/30
+                                value: "{{ (cap if cur <= 0 else cur * 0.7 + cap * 0.3) | round(0) }}"
+                        # repère replacé dans tous les cas, y compris si la mesure
+                        # a été rejetée (sinon on resterait bloqué dessus)
+                        - action: input_number.set_value
+                          target:
+                            entity_id: "{{ e_asoc }}"
+                          data:
+                            value: "{{ soc }}"
+                        - action: input_number.set_value
+                          target:
+                            entity_id: "{{ e_anrj }}"
+                          data:
+                            value: "{{ nrj }}"
+
+script:
+  zendure_solarflow4000mix_reset_sante:
+    alias: Zendure SolarFlow4000Mix reinitialiser l'estimation de sante
+    icon: mdi:restart
+    mode: single
+    sequence:
+      - action: input_number.set_value
+        target:
+          entity_id:
+            - input_number.zendure_solarflow4000mix_pack_1_capacite_estimee
+            - input_number.zendure_solarflow4000mix_pack_2_capacite_estimee
+            - input_number.zendure_solarflow4000mix_pack_3_capacite_estimee
+            - input_number.zendure_solarflow4000mix_pack_4_capacite_estimee
+        data:
+          value: 0
+      - action: input_number.set_value
+        target:
+          entity_id:
+            - input_number.zendure_solarflow4000mix_pack_1_soh_ancre_soc
+            - input_number.zendure_solarflow4000mix_pack_2_soh_ancre_soc
+            - input_number.zendure_solarflow4000mix_pack_3_soh_ancre_soc
+            - input_number.zendure_solarflow4000mix_pack_4_soh_ancre_soc
+        data:
+          value: -1

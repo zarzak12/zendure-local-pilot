@@ -1,0 +1,1602 @@
+# =====================================================================
+# Dashboard Zendure SolarFlow 4000 MIX PRO — adapté de Gielz1986
+# Requiert : apexcharts-card (HACS) + les 2 packages zendure_solarflow4000mix
+#
+# ⚠️ NE COLLE PAS CE FICHIER TEL QUEL dans Home Assistant.
+# Le marqueur SHELLY_ID doit d'abord être remplacé par l'identifiant de TON
+# Shelly. Deux façons de faire :
+#
+#   • Automatique (recommandé) — depuis la racine du dépôt :
+#       powershell -ExecutionPolicy Bypass -File tools\personnaliser.ps1 -Ip <IP_DU_SHELLY>
+#       ./tools/personnaliser.sh <IP_DU_SHELLY>        (Linux / macOS)
+#     Le fichier prêt à coller est écrit dans dashboard/dashboard-perso.yaml
+#
+#   • Manuelle — remplace partout SHELLY_ID par ton préfixe, visible dans
+#     Home Assistant → Paramètres → Appareils → ton Shelly → une entité.
+#     Exemple : shellypro3em_a1b2c3d4e5f6
+# =====================================================================
+views:
+  # ===================================================================
+  # VUE 1 — ZENDURE
+  # ===================================================================
+  - type: sections
+    max_columns: 3
+    title: Zendure
+    path: zendure
+    icon: mdi:battery
+    dense_section_placement: false
+    cards: []
+    sections:
+      # ----------------------------- Batterie -----------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: Batterie
+            heading_style: title
+            badges:
+              # Puissance batterie : vert en charge, rouge en décharge, gris au repos
+              - &bdg_p_charge
+                type: entity
+                entity: sensor.zendure_solarflow4000mix_puissance
+                show_state: true
+                show_icon: true
+                icon: mdi:battery-charging
+                color: '#01a180'
+                tap_action: {action: more-info}
+                visibility:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Charge
+              - &bdg_p_decharge
+                type: entity
+                entity: sensor.zendure_solarflow4000mix_puissance
+                show_state: true
+                show_icon: true
+                icon: mdi:battery-arrow-down
+                color: '#e05a4e'
+                tap_action: {action: more-info}
+                visibility:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Décharge
+              - &bdg_p_veille
+                type: entity
+                entity: sensor.zendure_solarflow4000mix_puissance
+                show_state: true
+                show_icon: true
+                icon: mdi:battery-outline
+                color: '#8a8a8a'
+                tap_action: {action: more-info}
+                visibility:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state_not: Charge
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state_not: Décharge
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_sortie_secours
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                tap_action: {action: more-info}
+                visibility:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_mode_secours
+                    state_not: Arrêt
+                  - condition: numeric_state
+                    entity: sensor.zendure_solarflow4000mix_sortie_secours
+                    above: 0
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_soc
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                tap_action: {action: more-info}
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_commutations_jour
+                show_state: true
+                show_icon: true
+                icon: mdi:swap-vertical-bold
+                color: '#01a180'
+                tap_action: {action: more-info}
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>La régulation tourne dans
+              le script du Shelly. Modes : **Arrêt** (aucune écriture),
+              **Autoconsommation**, **Charge seule** (surplus uniquement),
+              **Décharge seule** (couvre la conso), **Manuel** : consigne libre,
+              **+ = décharge** vers la maison, **− = charge** depuis le réseau.
+            visibility:
+              - condition: state
+                entity: input_boolean.zendure_solarflow4000mix_show_help
+                state: 'on'
+          - type: entities
+            show_header_toggle: false
+            state_color: false
+            entities:
+              - entity: select.SHELLY_ID_zendure_mode
+                name: Mode
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Mode manuel</ha-alert>Valeur
+              **positive** = **décharge** vers la maison. Valeur **négative** =
+              **charge** depuis le réseau. **0** = repos.
+            visibility: &vis_manuel
+              - condition: state
+                entity: select.SHELLY_ID_zendure_mode
+                state: Manuel
+          - type: entities
+            entities:
+              - entity: number.SHELLY_ID_zendure_consigne_manuelle
+                name: Consigne (+ décharge / − charge)
+                secondary_info: last-changed
+            visibility: *vis_manuel
+          # ---- Journée ----
+          - type: custom:apexcharts-card
+            experimental:
+              color_threshold: true
+            cache: true
+            update_interval: 15min
+            stacked: true
+            header: {show: true, show_states: true, title: ''}
+            graph_span: 1d
+            span: {start: day}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_puissance
+                name: Batterie
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                transform: return -x;
+                stroke_width: 2
+                opacity: 0.35
+                extend_to: now
+                color: '#01a180'
+                float_precision: 0
+                yaxis_id: energy
+                color_threshold: &ct_batt
+                  - {value: -3000, opacity: 0.55}
+                  - {value: -2000, opacity: 0.5}
+                  - {value: -1000, opacity: 0.3}
+                  - {value: -500, opacity: 0.15}
+                  - {value: 0, opacity: 0.1}
+                  - {value: 500, opacity: 0.15}
+                  - {value: 1000, opacity: 0.3}
+                  - {value: 2000, opacity: 0.5}
+                  - {value: 3000, opacity: 0.55}
+                show: {in_header: false, in_legend: true}
+              - entity: sensor.zendure_solarflow4000mix_reseau
+                name: Réseau
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                stroke_width: 0
+                opacity: 0.3
+                extend_to: now
+                color: '#c0c0c2'
+                float_precision: 0
+                yaxis_id: energy
+                show: {in_header: false, in_legend: true}
+              - entity: sensor.zendure_solarflow4000mix_soc
+                name: SOC
+                statistics: {period: 5minute, type: max, align: start}
+                type: line
+                curve: smooth
+                stroke_width: 0
+                extend_to: now
+                color: var(--accent-color)
+                float_precision: 0
+                yaxis_id: percentage
+                show: {in_header: false, in_legend: false}
+            apex_config: &apex_day
+              tooltip: {x: {format: HH:mm, show: false}}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+              yaxis:
+                - title: {text: ''}
+                  decimalsInFloat: 0
+                  labels: {style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              grid:
+                strokeDashArray: 0
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                show: true
+              chart:
+                height: 300px
+                toolbar:
+                  autoSelected: pan
+                  show: true
+                  tools: {download: false, zoom: true, zoomin: false, zoomout: false, pan: true}
+                zoom: {enabled: true, allowMouseWheelZoom: true, autoScaleYaxis: true}
+              legend: {show: true, floating: true, horizontalAlign: left, offsetX: 25, offsetY: 17}
+              markers: {size: 0, hover: {size: 0}}
+          # ---- Temps réel (10 min) ----
+          - type: custom:apexcharts-card
+            experimental:
+              color_threshold: true
+            cache: false
+            stacked: true
+            update_interval: 5sec
+            header: {show: true, show_states: true, title: ''}
+            graph_span: 10min
+            series:
+              - entity: sensor.zendure_solarflow4000mix_puissance
+                name: Batterie
+                group_by: {func: avg, duration: 5sec}
+                type: area
+                transform: return -x;
+                stroke_width: 2
+                opacity: 0.35
+                extend_to: now
+                color: '#01a180'
+                float_precision: 0
+                yaxis_id: energy
+                color_threshold: *ct_batt
+                show: {in_header: false, in_legend: true}
+              - entity: sensor.zendure_solarflow4000mix_reseau
+                name: Réseau
+                group_by: {func: avg, duration: 5sec}
+                type: area
+                stroke_width: 0
+                opacity: 0.3
+                extend_to: now
+                color: '#c0c0c2'
+                float_precision: 0
+                yaxis_id: energy
+                show: {in_header: false, in_legend: true}
+            apex_config:
+              tooltip: {x: {format: 'HH:mm:ss', show: false}}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+              yaxis:
+                - title: {text: ''}
+                  decimalsInFloat: 0
+                  labels: {style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              grid:
+                strokeDashArray: 0
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                show: true
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: true, floating: true, horizontalAlign: left, offsetX: 25, offsetY: 17}
+              markers: {size: 0, hover: {size: 0}}
+          # ---- PV ----
+          - type: heading
+            heading: PV
+            heading_style: title
+            visibility: &vis_pv
+              - condition: state
+                entity: input_boolean.zendure_solarflow4000mix_show_pv
+                state: 'on'
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_passthrough_pv
+                show_state: true
+                show_icon: true
+                color: var(--accent-color)
+                tap_action: {action: more-info}
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_pv_vers_batterie
+                show_state: true
+                show_icon: true
+                icon: mdi:battery
+                color: var(--accent-color)
+                tap_action: {action: more-info}
+                visibility:
+                  - condition: numeric_state
+                    entity: sensor.zendure_solarflow4000mix_pv_vers_batterie
+                    above: 0
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_pv_vers_maison
+                show_state: true
+                show_icon: true
+                icon: mdi:home
+                color: var(--accent-color)
+                tap_action: {action: more-info}
+                visibility:
+                  - condition: numeric_state
+                    entity: sensor.zendure_solarflow4000mix_pv_vers_maison
+                    above: 0
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_pv_jour
+                show_state: true
+                show_icon: true
+                color: var(--accent-color)
+                tap_action: {action: more-info}
+          - type: custom:apexcharts-card
+            experimental:
+              color_threshold: true
+            cache: true
+            update_interval: 15min
+            stacked: true
+            header: {show: true, show_states: true, title: ''}
+            graph_span: 1d
+            span: {start: day}
+            visibility: *vis_pv
+            series:
+              - entity: sensor.zendure_solarflow4000mix_pv_1
+                name: MPPT 1
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                stroke_width: 2
+                opacity: 0.35
+                extend_to: now
+                color: var(--accent-color)
+                float_precision: 0
+                show: {in_header: false, in_legend: true}
+              - entity: sensor.zendure_solarflow4000mix_pv_2
+                name: MPPT 2
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                stroke_width: 2
+                opacity: 0.2
+                extend_to: now
+                color: '#01a180'
+                float_precision: 0
+                show: {in_header: false, in_legend: true}
+            apex_config:
+              tooltip: {x: {format: HH:mm, show: false}}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+              yaxis:
+                - min: 0
+                  title: {text: ''}
+                  decimalsInFloat: 0
+                  labels: {style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              grid:
+                strokeDashArray: 0
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                show: true
+              chart: {height: 150px}
+              legend: {show: true, floating: true, horizontalAlign: left, offsetX: 25, offsetY: 17}
+              markers: {size: 0, hover: {size: 0}}
+
+      # ----------------------------- Contrôle -----------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: Contrôle
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_reseau
+                show_state: true
+                show_icon: true
+                icon: mdi:home
+                color: '#01a180'
+                tap_action: {action: more-info}
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_etat
+                name: État
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Veille
+                row:
+                  entity: sensor.zendure_solarflow4000mix_limite_soc
+                  name: Limite SOC
+              - entity: sensor.zendure_solarflow4000mix_energie_disponible
+                name: Énergie disponible
+              - entity: sensor.zendure_solarflow4000mix_energie_requise
+                name: Énergie à charger
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Décharge
+                row:
+                  entity: sensor.zendure_solarflow4000mix_autonomie_restante
+                  name: Autonomie restante
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Charge
+                row:
+                  entity: sensor.zendure_solarflow4000mix_temps_charge_restant
+                  name: Temps de charge restant
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Décharge
+                row:
+                  entity: sensor.zendure_solarflow4000mix_limite_sortie
+                  name: Consigne décharge
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: sensor.zendure_solarflow4000mix_etat
+                    state: Charge
+                row:
+                  entity: sensor.zendure_solarflow4000mix_limite_charge
+                  name: Consigne charge
+          # ---- Zéro soutirage ----
+          - type: heading
+            heading: Zéro soutirage
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_zero_soutirage_jour
+                name: Aujourd'hui
+                show_state: true
+                show_icon: true
+                icon: mdi:leaf
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Nombre d'heures par jour
+              où le compteur réseau est à 0 ou en dessous, sur ce mois et le
+              précédent. Données issues des statistiques long terme : environ 1 h
+              de décalage.
+            visibility: &vis_help
+              - condition: state
+                entity: input_boolean.zendure_solarflow4000mix_show_help
+                state: 'on'
+          - type: custom:apexcharts-card
+            header: {show: true, title: ''}
+            graph_span: 2month
+            span: {start: month, offset: -1month}
+            cache: false
+            apex_config:
+              yaxis:
+                - min: 0
+                  tickAmount: 4
+                  decimalsInFloat: 0
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip:
+                x: {format: d/MM, show: false}
+                y:
+                  formatter: |
+                    EVAL:function(value) {
+                      const h = Math.floor(value);
+                      const m = Math.round((value - h) * 60);
+                      return h + "h " + m + "m";
+                    }
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_zero_soutirage_jour
+                name: Zéro soutirage
+                statistics: {period: day, type: max, align: start}
+                type: column
+                color: '#01a180'
+                show: {in_header: false, in_legend: false}
+          # ---- Charge / décharge ----
+          - type: heading
+            heading: Charge | Décharge
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_rendement_global
+                name: Rendement
+                show_state: true
+                show_icon: true
+                icon: mdi:percent
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}
+          - type: custom:apexcharts-card
+            header: {show: true, title: ''}
+            graph_span: 24month
+            span: {start: month, offset: -23month}
+            cache: false
+            apex_config:
+              yaxis:
+                - decimalsInFloat: 0
+                  tickAmount: 4
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip: {x: {format: MM-yyyy, show: false}}
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_energie_chargee
+                name: Chargé
+                statistics: {period: month, type: change, align: start}
+                type: column
+                color: '#01a180'
+                show: {in_header: false}
+              - entity: sensor.zendure_solarflow4000mix_energie_dechargee
+                name: Déchargé
+                statistics: {period: month, type: change, align: start}
+                type: column
+                color: '#a2a2a3'
+                show: {in_header: false}
+          - type: entities
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_energie_chargee
+                name: Énergie chargée
+              - entity: sensor.zendure_solarflow4000mix_energie_dechargee
+                name: Énergie déchargée
+
+      # ----------------------------- Régulation (remplace Dynamic) --------
+      - type: grid
+        cards:
+          - type: heading
+            heading: Régulation Shelly
+            heading_style: title
+            badges:
+              - type: entity
+                entity: binary_sensor.zendure_solarflow4000mix_script_shelly
+                name: Script
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Réglages lus par le script
+              du Shelly toutes les 2 s. Les **buffers** sont la cible visée sur la
+              pince réseau : l'un s'applique quand la batterie décharge, l'autre
+              quand elle charge. Positif = marge anti-injection, **négatif =
+              injection résiduelle tolérée**. Les maxima s'appliquent à tous les
+              modes, dans la limite des plafonds de l'onduleur.
+            visibility: *vis_help
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: select.SHELLY_ID_zendure_mode
+                name: Mode
+              - entity: number.SHELLY_ID_zendure_decharge_max
+                name: Décharge max
+              - entity: number.SHELLY_ID_zendure_charge_max
+                name: Charge max
+              - entity: number.SHELLY_ID_zendure_buffer
+                name: Buffer décharge
+              - entity: number.SHELLY_ID_zendure_buffer_charge
+                name: Buffer charge
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: select.SHELLY_ID_zendure_mode
+                    state: Manuel
+                row:
+                  entity: number.SHELLY_ID_zendure_consigne_manuelle
+                  name: Consigne (+ décharge / − charge)
+          - type: logbook
+            target:
+              entity_id:
+                - select.SHELLY_ID_zendure_mode
+            hours_to_show: 24
+            grid_options: {columns: 12, rows: 6}
+
+  # ===================================================================
+  # VUE 2 — SANTÉ
+  # ===================================================================
+  - type: sections
+    max_columns: 4
+    title: Santé
+    path: sante
+    icon: mdi:battery-heart-variant
+    cards: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Global
+            heading_style: title
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_nombre_de_packs
+                name: Nombre de packs
+              - entity: input_number.zendure_solarflow4000mix_capacite
+                name: Capacité
+              - entity: sensor.zendure_solarflow4000mix_wifi_rssi
+                name: Signal WiFi
+              - entity: binary_sensor.zendure_solarflow4000mix_erreur
+                name: Erreur
+              - entity: sensor.zendure_solarflow4000mix_mode_secours
+                name: Mode secours
+              - entity: sensor.zendure_solarflow4000mix_injection_pv
+                name: Injection PV
+              - entity: sensor.zendure_solarflow4000mix_calibration
+                name: Calibration
+              - entity: sensor.zendure_solarflow4000mix_plafond_charge
+                name: Plafond charge onduleur
+              - entity: sensor.zendure_solarflow4000mix_plafond_onduleur
+                name: Plafond décharge onduleur
+              - entity: sensor.zendure_solarflow4000mix_stockage
+                name: Écriture des réglages
+              - entity: sensor.zendure_solarflow4000mix_tension_batterie
+                name: Tension batterie
+              - entity: sensor.zendure_solarflow4000mix_soc_min
+                name: SOC min
+              - entity: sensor.zendure_solarflow4000mix_soc_max
+                name: SOC max
+          # ---- Commutations ----
+          - type: heading
+            heading: Commutations
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_commutations_jour
+                name: Aujourd'hui
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Nombre de passages en
+              charge et en décharge par jour. La ligne pointillée marque le seuil
+              de 100 par jour, au-delà duquel la régulation commute trop souvent.
+            visibility: *vis_help
+          - type: custom:apexcharts-card
+            stacked: true
+            header: {show: true, title: ''}
+            graph_span: 2month
+            span: {start: month, offset: -1month}
+            cache: false
+            apex_config:
+              annotations:
+                yaxis:
+                  - y: 100
+                    borderColor: var(--accent-color)
+                    strokeDashArray: 4
+                    borderWidth: 2
+              yaxis:
+                - decimalsInFloat: 0
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip: {x: {format: d/MM, show: false}}
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_commutations_charge_jour
+                name: Charge
+                statistics: {period: day, type: max, align: middle}
+                type: column
+                color: '#01a180'
+                show: {in_header: false, extremas: false}
+              - entity: sensor.zendure_solarflow4000mix_commutations_decharge_jour
+                name: Décharge
+                statistics: {period: day, type: max, align: middle}
+                type: column
+                color: '#a2a2a3'
+                show: {in_header: false, extremas: false}
+          # ---- Calibrations ----
+          - type: heading
+            heading: Calibrations
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_derniere_calibration
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                tap_action: {action: more-info}
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_jours_depuis_calibration
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Jours où la batterie a
+              atteint 100 % (en vert). La calibration du SOC se fait à pleine
+              charge ; sans calibration pendant plus d'un mois, le BMS la force.
+            visibility: *vis_help
+          - type: custom:apexcharts-card
+            stacked: true
+            header: {show: true, title: ''}
+            graph_span: 2month
+            span: {start: month, offset: -1month}
+            cache: false
+            apex_config:
+              yaxis:
+                - decimalsInFloat: 0
+                  min: 0
+                  max: 100
+                  tickAmount: 4
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip: {x: {format: d/MM, show: false}}
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_soc
+                name: Calibrée
+                transform: 'return x >= 100 ? x : null;'
+                statistics: {period: day, type: max, align: middle}
+                type: column
+                color: '#01a180'
+                show: {in_header: false, extremas: false}
+              - entity: sensor.zendure_solarflow4000mix_soc
+                name: SOC max du jour
+                transform: 'return x < 100 ? x : null;'
+                statistics: {period: day, type: max, align: middle}
+                type: column
+                color: '#a2a2a3'
+                show: {in_header: false, extremas: false}
+
+      - type: grid
+        cards:
+          # ---- Température onduleur ----
+          - type: heading
+            heading: Température onduleur
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_temperature_boitier
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                tap_action: {action: more-info}
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Température du jour. La
+              ligne pointillée (55 °C) indique le seuil de réduction de puissance
+              constaté sur les autres SolarFlow : à confirmer sur la 4000.
+            visibility: *vis_help
+          - type: custom:apexcharts-card
+            experimental:
+              color_threshold: true
+            header: {show: true, title: ''}
+            graph_span: 1day
+            span: {start: day}
+            cache: false
+            apex_config:
+              markers: {size: 0, hover: {size: 0}}
+              annotations:
+                yaxis:
+                  - y: 55
+                    borderColor: var(--accent-color)
+                    strokeDashArray: 4
+                    borderWidth: 2
+              yaxis:
+                - decimalsInFloat: 0
+                  min: 0
+                  max: 80
+                  tickAmount: 4
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip: {x: {format: HH:mm, show: false}}
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_temperature_boitier
+                name: Onduleur
+                stroke_width: 2
+                opacity: 0.2
+                curve: smooth
+                extend_to: now
+                statistics: {period: 5minute, type: max, align: start}
+                type: area
+                color: '#01a180'
+                show: {in_header: false}
+                color_threshold: &ct_temp
+                  - {value: 0, opacity: 0.2}
+                  - {value: 30, opacity: 0.35}
+                  - {value: 40, opacity: 0.5}
+                  - {value: 50, opacity: 0.65}
+                  - {value: 60, opacity: 0.8}
+              - entity: sensor.zendure_solarflow4000mix_pack_1_temperature
+                name: Pack 1
+                stroke_width: 2
+                curve: smooth
+                extend_to: now
+                statistics: {period: 5minute, type: max, align: start}
+                type: line
+                color: var(--accent-color)
+                show: {in_header: false}
+          # ---- Packs ----
+          - type: heading
+            heading: Pack 1
+            heading_style: title
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_pack_1_soc
+                name: SOC
+              - entity: sensor.zendure_solarflow4000mix_pack_1_temperature
+                name: Température
+              - entity: sensor.zendure_solarflow4000mix_pack_1_tension
+                name: Tension
+              - entity: sensor.zendure_solarflow4000mix_pack_1_courant
+                name: Courant
+              - entity: sensor.zendure_solarflow4000mix_pack_1_ecart_cellules
+                name: Écart entre cellules
+              - entity: sensor.zendure_solarflow4000mix_pack_1_puissance_dc
+                name: Puissance DC
+              - entity: sensor.zendure_solarflow4000mix_pack_1_sante
+                name: État de santé (estimé)
+          # Packs 2 à 4 : n'apparaissent que s'ils sont réellement présents
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_2_soc
+                state_not: unavailable
+            card:
+              type: entities
+              title: Pack 2
+              show_header_toggle: false
+              entities:
+                - entity: sensor.zendure_solarflow4000mix_pack_2_soc
+                  name: SOC
+                - entity: sensor.zendure_solarflow4000mix_pack_2_temperature
+                  name: Température
+                - entity: sensor.zendure_solarflow4000mix_pack_2_tension
+                  name: Tension
+                - entity: sensor.zendure_solarflow4000mix_pack_2_courant
+                  name: Courant
+                - entity: sensor.zendure_solarflow4000mix_pack_2_ecart_cellules
+                  name: Écart entre cellules
+                - entity: sensor.zendure_solarflow4000mix_pack_2_puissance_dc
+                  name: Puissance DC
+                - entity: sensor.zendure_solarflow4000mix_pack_2_sante
+                  name: État de santé (estimé)
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_3_soc
+                state_not: unavailable
+            card:
+              type: entities
+              title: Pack 3
+              show_header_toggle: false
+              entities:
+                - entity: sensor.zendure_solarflow4000mix_pack_3_soc
+                  name: SOC
+                - entity: sensor.zendure_solarflow4000mix_pack_3_temperature
+                  name: Température
+                - entity: sensor.zendure_solarflow4000mix_pack_3_tension
+                  name: Tension
+                - entity: sensor.zendure_solarflow4000mix_pack_3_courant
+                  name: Courant
+                - entity: sensor.zendure_solarflow4000mix_pack_3_ecart_cellules
+                  name: Écart entre cellules
+                - entity: sensor.zendure_solarflow4000mix_pack_3_puissance_dc
+                  name: Puissance DC
+                - entity: sensor.zendure_solarflow4000mix_pack_3_sante
+                  name: État de santé (estimé)
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_4_soc
+                state_not: unavailable
+            card:
+              type: entities
+              title: Pack 4
+              show_header_toggle: false
+              entities:
+                - entity: sensor.zendure_solarflow4000mix_pack_4_soc
+                  name: SOC
+                - entity: sensor.zendure_solarflow4000mix_pack_4_temperature
+                  name: Température
+                - entity: sensor.zendure_solarflow4000mix_pack_4_tension
+                  name: Tension
+                - entity: sensor.zendure_solarflow4000mix_pack_4_courant
+                  name: Courant
+                - entity: sensor.zendure_solarflow4000mix_pack_4_ecart_cellules
+                  name: Écart entre cellules
+                - entity: sensor.zendure_solarflow4000mix_pack_4_puissance_dc
+                  name: Puissance DC
+                - entity: sensor.zendure_solarflow4000mix_pack_4_sante
+                  name: État de santé (estimé)
+          # Synthèse multi-packs : un écart de SOC durable trahit un déséquilibre
+          - type: conditional
+            conditions:
+              - condition: numeric_state
+                entity: sensor.zendure_solarflow4000mix_nombre_de_packs
+                above: 1
+            card:
+              type: entities
+              title: Tous les packs
+              show_header_toggle: false
+              entities:
+                - entity: sensor.zendure_solarflow4000mix_ecart_soc_packs
+                  name: Écart de SOC entre packs
+                - entity: sensor.zendure_solarflow4000mix_ecart_cellules_max
+                  name: Écart cellules max
+                - entity: sensor.zendure_solarflow4000mix_temperature_pack_max
+                  name: Température max
+
+      - type: grid
+        cards:
+          # ---- État de santé (SOH) ----
+          - type: heading
+            heading: État de santé des batteries (estimé)
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_sante_min
+                color: green
+          - type: markdown
+            visibility: *vis_help
+            content: >-
+              La Zendure **n'expose aucun indicateur de santé** : ni capacité
+              réelle, ni nombre de cycles. Cette valeur est donc **reconstruite
+              par la mesure** : on intègre la puissance DC de chaque pack
+              (tension × courant) et on la rapporte à la variation de SOC
+              correspondante.
+
+
+              **Capacité réelle = énergie échangée ÷ variation de SOC × 100**,
+              puis **santé = capacité réelle ÷ capacité nominale** (8 kWh par
+              pack de type 70 sur ce modèle).
+
+
+              Il faut un cycle d'au moins **25 points de SOC** pour obtenir une
+              première valeur, et quelques cycles pour qu'elle se stabilise —
+              chaque nouvelle mesure ne pèse que 30 %. Une valeur aberrante
+              (redémarrage de HA en plein cycle) est automatiquement rejetée.
+              Un écart de ± 5 % est normal : ce n'est **pas** une mesure
+              constructeur.
+          - type: gauge
+            entity: sensor.zendure_solarflow4000mix_pack_1_sante
+            name: Pack 1
+            min: 50
+            max: 110
+            needle: true
+            severity: {green: 90, yellow: 80, red: 50}
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_2_sante
+                state_not: unavailable
+            card:
+              type: gauge
+              entity: sensor.zendure_solarflow4000mix_pack_2_sante
+              name: Pack 2
+              min: 50
+              max: 110
+              needle: true
+              severity: {green: 90, yellow: 80, red: 50}
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_3_sante
+                state_not: unavailable
+            card:
+              type: gauge
+              entity: sensor.zendure_solarflow4000mix_pack_3_sante
+              name: Pack 3
+              min: 50
+              max: 110
+              needle: true
+              severity: {green: 90, yellow: 80, red: 50}
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_4_sante
+                state_not: unavailable
+            card:
+              type: gauge
+              entity: sensor.zendure_solarflow4000mix_pack_4_sante
+              name: Pack 4
+              min: 50
+              max: 110
+              needle: true
+              severity: {green: 90, yellow: 80, red: 50}
+          # Tant qu'aucune estimation n'est disponible, on montre l'avancement
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: sensor.zendure_solarflow4000mix_pack_1_sante
+                state: unavailable
+            card:
+              type: gauge
+              entity: sensor.zendure_solarflow4000mix_mesure_sante_progression
+              name: Mesure en cours
+              min: 0
+              max: 100
+              severity: {green: 80, yellow: 30, red: 0}
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_capacite_nominale_totale
+                name: Capacité nominale totale
+              - entity: input_number.zendure_solarflow4000mix_pack_1_capacite_estimee
+                name: Capacité mesurée pack 1
+              - entity: sensor.zendure_solarflow4000mix_mesure_sante_progression
+                name: Avancement de la mesure en cours
+              - entity: script.zendure_solarflow4000mix_reset_sante
+                name: Réinitialiser l'estimation
+                icon: mdi:restart
+
+      - type: grid
+        cards:
+          # ---- Rendement charge ----
+          - type: heading
+            heading: Rendement de charge (indicatif)
+            heading_style: title
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Puissance entrant dans le
+              pack (DC) rapportée à la puissance prise au réseau (AC). Mesurable
+              uniquement en charge réseau sans PV, au-dessus de 50 W : hors de ces
+              conditions la **dernière mesure connue** reste affichée.
+            visibility: *vis_help
+          - type: custom:apexcharts-card
+            experimental:
+              color_threshold: true
+            update_interval: 5min
+            header: {show: true, title: ''}
+            graph_span: 1day
+            span: {start: day}
+            cache: false
+            apex_config: &apex_eff
+              markers: {size: 0, hover: {size: 0}}
+              yaxis:
+                - decimalsInFloat: 0
+                  min: 0
+                  max: 100
+                  tickAmount: 4
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip: {x: {format: HH:mm, show: false}}
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 150px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+                axisBorder: {color: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_efficacite_charge
+                name: Rendement charge
+                stroke_width: 2
+                opacity: 0.2
+                extend_to: now
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                color: '#01a180'
+                show: {in_header: false}
+          - type: entities
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_charge_dc
+                name: Charge DC
+              - entity: sensor.zendure_solarflow4000mix_rendement_charge
+                name: Rendement charge
+              - entity: sensor.zendure_solarflow4000mix_efficacite_charge_24h
+                name: Rendement charge (moyenne 7 j)
+          # ---- Rendement décharge ----
+          - type: heading
+            heading: Rendement de décharge (indicatif)
+            heading_style: title
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Puissance fournie à la
+              maison (AC) rapportée à la puissance sortant du pack (DC). Mesurable
+              uniquement sans PV, au-dessus de 50 W : hors de ces conditions la
+              **dernière mesure connue** reste affichée.
+            visibility: *vis_help
+          - type: custom:apexcharts-card
+            experimental:
+              color_threshold: true
+            update_interval: 5min
+            header: {show: true, title: ''}
+            graph_span: 1day
+            span: {start: day}
+            cache: false
+            apex_config: *apex_eff
+            series:
+              - entity: sensor.zendure_solarflow4000mix_efficacite_decharge
+                name: Rendement décharge
+                stroke_width: 2
+                opacity: 0.2
+                extend_to: now
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                color: '#01a180'
+                show: {in_header: false}
+          - type: entities
+            entities:
+              - entity: sensor.zendure_solarflow4000mix_decharge_dc
+                name: Décharge DC
+              - entity: sensor.zendure_solarflow4000mix_rendement_decharge
+                name: Rendement décharge
+              - entity: sensor.zendure_solarflow4000mix_efficacite_decharge_24h
+                name: Rendement décharge (moyenne 7 j)
+
+  # ===================================================================
+  # VUE 3 — HISTORIQUE
+  # ===================================================================
+  - type: sections
+    max_columns: 3
+    title: Historique
+    path: historique
+    icon: mdi:history
+    cards: []
+    sections:
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Batterie (7 jours)
+            heading_style: title
+            badges:
+              - *bdg_p_charge
+              - *bdg_p_decharge
+              - *bdg_p_veille
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_soc
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                tap_action: {action: more-info}
+          - type: custom:apexcharts-card
+            grid_options: {columns: 36, rows: auto}
+            experimental:
+              color_threshold: true
+              brush: true
+            brush:
+              selection_span: 1d
+              apex_config:
+                grid:
+                  strokeDashArray: 0
+                  borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                  show: true
+                yaxis: {show: false}
+                xaxis:
+                  labels: {show: false}
+                  axisTicks: {show: false}
+                chart: {height: 100}
+            cache: true
+            update_interval: 15min
+            stacked: true
+            header: {show: true, show_states: true, title: ''}
+            graph_span: 8d
+            span: {offset: -7d, start: day}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_puissance
+                name: Batterie
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                transform: return -x;
+                stroke_width: 2
+                opacity: 0.35
+                extend_to: now
+                color: '#01a180'
+                float_precision: 0
+                yaxis_id: energy
+                color_threshold: *ct_batt
+                show: {in_brush: true, in_header: false, in_legend: false}
+              - entity: sensor.zendure_solarflow4000mix_reseau
+                name: Réseau
+                statistics: {period: 5minute, type: mean, align: start}
+                type: area
+                stroke_width: 0
+                opacity: 0.3
+                extend_to: now
+                color: '#c0c0c2'
+                float_precision: 0
+                yaxis_id: energy
+                show: {in_brush: true, in_header: false, in_legend: false}
+              - entity: sensor.zendure_solarflow4000mix_soc
+                name: SOC
+                statistics: {period: 5minute, type: max, align: start}
+                type: line
+                curve: smooth
+                stroke_width: 0
+                extend_to: now
+                color: var(--accent-color)
+                float_precision: 0
+                yaxis_id: percentage
+                show: {in_header: false, in_legend: false}
+            apex_config:
+              tooltip: {x: {format: 'dd-MM (HH:mm)', show: false}}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+              yaxis:
+                - title: {text: ''}
+                  decimalsInFloat: 0
+                  labels: {style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              grid:
+                strokeDashArray: 0
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                show: true
+              chart: {height: 300px, zoom: {autoScaleYaxis: true}}
+              legend: {show: false}
+              markers: {size: 0, hover: {size: 0}}
+          - type: heading
+            heading: Température onduleur (7 jours)
+            heading_style: title
+          - type: custom:apexcharts-card
+            grid_options: {columns: 36, rows: auto}
+            experimental:
+              color_threshold: true
+              brush: true
+            brush:
+              selection_span: 1d
+              apex_config:
+                yaxis: {show: false, min: 0, max: 80}
+                xaxis:
+                  labels: {show: false}
+                  axisTicks: {show: false}
+                chart: {height: 100}
+            header: {show: true, title: ''}
+            graph_span: 8day
+            span: {offset: -7d, start: day}
+            cache: false
+            apex_config:
+              markers: {size: 0, hover: {size: 0}}
+              annotations:
+                yaxis:
+                  - y: 55
+                    borderColor: var(--accent-color)
+                    strokeDashArray: 4
+                    borderWidth: 2
+              yaxis:
+                - decimalsInFloat: 0
+                  min: 0
+                  max: 80
+                  tickAmount: 4
+                  labels: {show: true, style: {colors: 'color-mix(in srgb, var(--primary-text-color) 75%, transparent)'}}
+              tooltip: {x: {format: 'dd-MM (HH:mm)', show: false}}
+              grid:
+                show: true
+                borderColor: 'color-mix(in srgb, var(--divider-color) 50%, transparent)'
+                strokeDashArray: 0
+                padding: {top: -10}
+              chart: {height: 200px}
+              legend: {show: false}
+              xaxis:
+                labels: {show: false}
+                axisTicks: {show: false}
+            series:
+              - entity: sensor.zendure_solarflow4000mix_temperature_boitier
+                name: Onduleur
+                stroke_width: 2
+                opacity: 0.2
+                curve: smooth
+                extend_to: now
+                statistics: {period: 5minute, type: max, align: start}
+                type: area
+                color: '#01a180'
+                color_threshold: *ct_temp
+                show: {in_header: false, in_brush: true}
+
+  # ===================================================================
+  # VUE 4 — RÉGLAGES
+  # ===================================================================
+  - type: sections
+    max_columns: 3
+    title: Réglages
+    path: reglages
+    icon: mdi:cog
+    cards: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Zendure connectée
+            heading_style: title
+          - type: markdown
+            text_only: true
+            grid_options: {columns: 3, rows: auto}
+            content: >-
+              {% set base = 'https://cdn.jsdelivr.net/gh/Gielz1986/Zendure-HA-zenSDK@main/Devices/' %}
+              {% set raw = states.sensor.zendure_solarflow4000mix_raw %}
+              {% set age = (now() - raw.last_updated).total_seconds() if raw else 9999 %}
+              <img src="{{ base ~ ('V2_SF_3000_4000_Mix.png' if age < 120 else 'Inactive.png') }}">
+          - type: markdown
+            text_only: true
+            grid_options: {columns: 9, rows: auto}
+            content: >-
+              {% set raw = states.sensor.zendure_solarflow4000mix_raw %}
+
+              **SolarFlow 4000 Mix Pro** ({{ states('input_number.zendure_solarflow4000mix_capacite') }} kWh)
+
+              {{ state_attr('sensor.zendure_solarflow4000mix_raw', 'sn') }}
+
+
+              **Dernière lecture API**
+
+              {% if raw and (now() - raw.last_updated).total_seconds() < 120 %}
+              {{ raw.last_updated | as_local | as_timestamp | timestamp_custom('%d/%m/%Y %H:%M:%S') }}
+              {% else %}API locale injoignable{% endif %}
+
+
+              **Script Shelly** : {{ 'actif' if is_state('binary_sensor.zendure_solarflow4000mix_script_shelly', 'on') else 'ARRÊTÉ' }}
+          - type: heading
+            heading: Capacité
+            heading_style: title
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Renseigne la capacité
+              utile totale de tes packs : elle sert au calcul de l'énergie
+              disponible et du temps de charge.
+            visibility: &vis_help2
+              - condition: state
+                entity: input_boolean.zendure_solarflow4000mix_show_help
+                state: 'on'
+          - type: entities
+            entities:
+              - entity: input_number.zendure_solarflow4000mix_capacite
+                name: Capacité batterie
+          - type: heading
+            heading: Régulation (Shelly)
+            heading_style: title
+            badges:
+              - type: entity
+                entity: binary_sensor.SHELLY_ID_zendure_en_veille
+                name: Veille
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Les **buffers** sont le
+              point de fonctionnement visé sur la pince réseau (−200 à 200 W) :
+              *décharge* quand la batterie alimente la maison, *charge* quand elle
+              absorbe le surplus. Positif = léger soutirage conservé, **négatif =
+              légère injection tolérée**, 0 = injection zéro stricte. Le **délai
+              de veille** met la Zendure en veille profonde après ce temps à 0 W
+              (0 = jamais). La **consigne manuelle** n'apparaît qu'en mode Manuel :
+              **+ = décharge** vers la maison, **− = charge** depuis le réseau.
+            visibility: *vis_help2
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: select.SHELLY_ID_zendure_mode
+                name: Mode
+              - entity: number.SHELLY_ID_zendure_decharge_max
+                name: Décharge max
+              - entity: number.SHELLY_ID_zendure_charge_max
+                name: Charge max
+              - entity: number.SHELLY_ID_zendure_buffer
+                name: Buffer décharge
+              - entity: number.SHELLY_ID_zendure_buffer_charge
+                name: Buffer charge
+              - type: conditional
+                conditions:
+                  - condition: state
+                    entity: select.SHELLY_ID_zendure_mode
+                    state: Manuel
+                row:
+                  entity: number.SHELLY_ID_zendure_consigne_manuelle
+                  name: Consigne (+ décharge / − charge)
+              - entity: number.SHELLY_ID_zendure_delai_veille
+                name: Délai de veille
+          - type: heading
+            heading: Réglages avancés (KVS Shelly)
+            heading_style: title
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="warning">Attention</ha-alert>Ces valeurs sont
+              écrites dans le KVS du Shelly et rechargées immédiatement par le
+              script. **Gain** : agressivité de la correction (1 = pleine
+              correction, risque d'oscillation). **Zone morte** : consigne forcée
+              à 0 en dessous. **Hystérésis** : écart minimal avant réécriture.
+              **Seuil de réveil** : consigne nécessaire pour sortir de veille
+              profonde. **Délai de bascule** : temps passé à 0 W à observer le
+              réseau avant d'inverser charge ↔ décharge (0 = bascule immédiate).
+              Ne change l'**IP** que si la réservation DHCP de la
+              Zendure a changé.
+            visibility: *vis_help2
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: input_text.zendure_solarflow4000mix_ip
+                name: Adresse IP Zendure
+              - entity: input_number.zendure_solarflow4000mix_periode
+                name: Rafraîchissement état Zendure
+              - entity: input_number.zendure_solarflow4000mix_tick
+                name: Pas de scrutation de la pince
+              - entity: input_number.zendure_solarflow4000mix_gain
+                name: Gain
+              - entity: input_number.zendure_solarflow4000mix_zone_morte
+                name: Zone morte
+              - entity: input_number.zendure_solarflow4000mix_hysteresis
+                name: Hystérésis
+              - entity: input_number.zendure_solarflow4000mix_seuil_reveil
+                name: Seuil de réveil
+              - entity: input_number.zendure_solarflow4000mix_delai_bascule
+                name: Délai de bascule
+      - type: grid
+        cards:
+          - type: heading
+            heading: Bornes SOC
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_soc_min
+                show_state: true
+                show_icon: true
+                icon: mdi:api
+                color: '#01a180'
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_soc_max
+                show_state: true
+                show_icon: false
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="error">Attention</ha-alert>Le SOC minimum est
+              réglé sous 10 %, ce que Zendure déconseille.
+            visibility:
+              - condition: numeric_state
+                entity: sensor.zendure_solarflow4000mix_soc_min
+                below: 10
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Déplace les curseurs :
+              l'écriture dans la Zendure part 5 s après le dernier mouvement
+              (écriture flash, à utiliser ponctuellement). Les badges affichent
+              les valeurs réellement appliquées par l'appareil.
+            visibility: *vis_help2
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: input_number.zendure_solarflow4000mix_soc_min_consigne
+                name: SOC minimum
+              - entity: input_number.zendure_solarflow4000mix_soc_max_consigne
+                name: SOC maximum
+          - type: tile
+            entity: script.zendure_solarflow4000mix_set_soc
+            name: Modifier les bornes SOC
+            icon: mdi:battery-sync
+            tap_action: {action: more-info}
+          - type: heading
+            heading: Plafonds onduleur
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_plafond_charge
+                show_state: true
+                show_icon: true
+                icon: mdi:battery-arrow-up
+                color: '#01a180'
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_plafond_onduleur
+                show_state: true
+                show_icon: true
+                icon: mdi:battery-arrow-down
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Écriture en flash : à
+              utiliser ponctuellement. Au-delà de 3680 W, vérifier la ligne
+              d'alimentation (circuit dédié 20 A).
+            visibility: *vis_help2
+          - type: tile
+            entity: script.zendure_solarflow4000mix_set_plafonds
+            name: Modifier les plafonds
+            icon: mdi:speedometer
+            tap_action: {action: more-info}
+          - type: heading
+            heading: Injection PV
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_injection_pv
+                show_state: true
+                show_icon: true
+                icon: mdi:api
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Écriture en flash : à
+              utiliser ponctuellement. **Interdite** empêche tout renvoi du
+              surplus PV vers le réseau, **Auto** laisse la Zendure décider.
+            visibility: *vis_help2
+          - type: tile
+            entity: script.zendure_solarflow4000mix_set_injection_pv
+            name: Modifier l'injection PV
+            icon: mdi:transmission-tower-export
+            tap_action: {action: more-info}
+          - type: heading
+            heading: Mode secours
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_mode_secours
+                show_state: true
+                show_icon: true
+                icon: mdi:home-lightning-bolt
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>Écriture en flash :
+              comportement de la sortie secours en cas de coupure réseau.
+              **Arrêt** désactive la sortie secours.
+            visibility: *vis_help2
+          - type: tile
+            entity: script.zendure_solarflow4000mix_set_mode_secours
+            name: Modifier le mode secours
+            icon: mdi:power-plug-off
+            tap_action: {action: more-info}
+      - type: grid
+        cards:
+          - type: heading
+            heading: Affichage
+            heading_style: title
+          - type: entities
+            entities:
+              - entity: input_boolean.zendure_solarflow4000mix_show_help
+              - entity: input_boolean.zendure_solarflow4000mix_show_pv
+          - type: heading
+            heading: Journal (24 h)
+            heading_style: title
+            badges:
+              - type: button
+                icon: mdi:information
+                text: Plus
+                color: '#01a180'
+                tap_action: {action: navigate, navigation_path: /logbook}
+          - type: logbook
+            target:
+              entity_id:
+                - select.SHELLY_ID_zendure_mode
+                - binary_sensor.zendure_solarflow4000mix_script_shelly
+                - binary_sensor.zendure_solarflow4000mix_erreur
+            hours_to_show: 24
+            grid_options: {columns: 12, rows: 12}

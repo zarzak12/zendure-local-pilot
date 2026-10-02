@@ -1,0 +1,836 @@
+# =====================================================================
+# packages/zendure_solarflow4000mix.yaml
+# Zendure SolarFlow 4000 MIX PRO — pilotage 100 % local via zenSDK (HTTP)
+# Validé sur rapport réel : 2 MPPT, 1 pack 8S LFP, échelles confirmées
+#
+# 1. IP de la batterie : découverte automatiquement par le script Shelly, qui
+#    la publie dans son KVS (clé zendure_ip). HA la lit de là : plus rien à
+#    saisir ici, et un changement de bail DHCP est rattrapé tout seul.
+#    L'IP ci-dessous n'est qu'un secours pour le tout premier démarrage.
+# 2. Régulation : script Shelly id 1 (réglages via ses entités
+#    select/number). Ce package = lecture, énergie, SOC, plafonds, sécurité.
+#    script.zendure_solarflow4000mix_set_power : tests, en mode Arrêt seulement
+# 3. Dans configuration.yaml, exclure l'entité brute du recorder :
+#      recorder:
+#        exclude:
+#          entities:
+#            - sensor.zendure_solarflow4000mix_raw
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Lecture : un seul appel GET /properties/report
+#
+# L'adresse vient de input_text.zendure_solarflow4000mix_ip, tenu à jour
+# automatiquement par l'automatisation « IP découverte → HA ». On s'appuie
+# volontairement sur ce helper plutôt que sur le capteur REST du Shelly :
+# un helper est persistant et toujours disponible, alors qu'un capteur REST
+# qui rate une interrogation entraînerait tous les capteurs Zendure avec lui.
+# ---------------------------------------------------------------------
+rest:
+  - resource_template: >-
+      http://{{ states('input_text.zendure_solarflow4000mix_ip')
+                if states('input_text.zendure_solarflow4000mix_ip') is match('^(\d{1,3}\.){3}\d{1,3}$')
+                else '0.0.0.0' }}/properties/report
+    scan_interval: 5   # affichage uniquement, la régulation est dans le Shelly
+    # 20 s, pas 8 : la Zendure répond en ~90 ms d'ordinaire, mais son serveur
+    # HTTP peut marquer de longues pauses quand plusieurs clients l'interrogent.
+    # Un timeout serré faisait clignoter tous les capteurs en « Indisponible ».
+    timeout: 20
+    sensor:
+      - name: Zendure SolarFlow4000Mix raw
+        unique_id: zendure_solarflow4000mix_raw
+        value_template: "{{ value_json.product | default('unknown') }}"
+        json_attributes:
+          - sn
+          - product
+          - timestamp
+          - properties
+          - packData
+
+# ---------------------------------------------------------------------
+# Capteurs dérivés
+# ---------------------------------------------------------------------
+template:
+  - sensor:
+      # ---- État global ----
+      - name: Zendure SOC
+        unique_id: zendure_solarflow4000mix_soc
+        default_entity_id: sensor.zendure_solarflow4000mix_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: &zav "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties') is mapping }}"
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').electricLevel }}"
+
+      - name: Zendure tension batterie
+        unique_id: zendure_solarflow4000mix_tension_batterie
+        default_entity_id: sensor.zendure_solarflow4000mix_tension_batterie
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').BatVolt | int(0) / 100 }}"
+
+      - name: Zendure autonomie restante
+        unique_id: zendure_solarflow4000mix_autonomie_restante
+        default_entity_id: sensor.zendure_solarflow4000mix_autonomie_restante
+        unit_of_measurement: min
+        device_class: duration
+        availability: >-
+          {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
+          {{ p is mapping and p.packInputPower | int(0) > 20 }}
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').remainOutTime }}"
+
+      - name: Zendure temperature boitier
+        unique_id: zendure_solarflow4000mix_temperature_boitier
+        default_entity_id: sensor.zendure_solarflow4000mix_temperature_boitier
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: *zav
+        state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','properties').hyperTmp | int(2931)) - 2731) / 10 }}"
+
+      # ---- Production PV (2 MPPT) ----
+      - name: Zendure PV
+        unique_id: zendure_solarflow4000mix_pv
+        default_entity_id: sensor.zendure_solarflow4000mix_pv
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').solarInputPower }}"
+
+      - name: Zendure PV 1
+        unique_id: zendure_solarflow4000mix_pv_1
+        default_entity_id: sensor.zendure_solarflow4000mix_pv_1
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').solarPower1 }}"
+
+      - name: Zendure PV 2
+        unique_id: zendure_solarflow4000mix_pv_2
+        default_entity_id: sensor.zendure_solarflow4000mix_pv_2
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').solarPower2 }}"
+
+      # ---- Flux AC ----
+      - name: Zendure sortie maison
+        unique_id: zendure_solarflow4000mix_sortie_maison
+        default_entity_id: sensor.zendure_solarflow4000mix_sortie_maison
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').outputHomePower }}"
+
+      - name: Zendure entree reseau
+        unique_id: zendure_solarflow4000mix_entree_reseau
+        default_entity_id: sensor.zendure_solarflow4000mix_entree_reseau
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').gridInputPower }}"
+
+      - name: Zendure sortie secours
+        unique_id: zendure_solarflow4000mix_sortie_secours
+        default_entity_id: sensor.zendure_solarflow4000mix_sortie_secours
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: >-
+          {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
+          {{ p.gridOffPower | int(0) + p.gridOffPower2 | int(0) }}
+
+      # ---- Flux batterie ----
+      - name: Zendure charge batterie
+        unique_id: zendure_solarflow4000mix_charge_batterie
+        default_entity_id: sensor.zendure_solarflow4000mix_charge_batterie
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').outputPackPower }}"
+
+      - name: Zendure decharge batterie
+        unique_id: zendure_solarflow4000mix_decharge_batterie
+        default_entity_id: sensor.zendure_solarflow4000mix_decharge_batterie
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').packInputPower }}"
+
+      - name: Zendure puissance batterie nette
+        unique_id: zendure_solarflow4000mix_puissance_batterie_nette
+        default_entity_id: sensor.zendure_solarflow4000mix_puissance_batterie_nette
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zav
+        # + = décharge, − = charge
+        state: >-
+          {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
+          {{ p.packInputPower | int(0) - p.outputPackPower | int(0) }}
+
+      # ---- Consignes / réglages ----
+      - name: Zendure limite sortie
+        unique_id: zendure_solarflow4000mix_limite_sortie
+        default_entity_id: sensor.zendure_solarflow4000mix_limite_sortie
+        unit_of_measurement: W
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').outputLimit }}"
+
+      - name: Zendure limite charge
+        unique_id: zendure_solarflow4000mix_limite_charge
+        default_entity_id: sensor.zendure_solarflow4000mix_limite_charge
+        unit_of_measurement: W
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').inputLimit }}"
+
+      - name: Zendure plafond onduleur
+        unique_id: zendure_solarflow4000mix_plafond_onduleur
+        default_entity_id: sensor.zendure_solarflow4000mix_plafond_onduleur
+        unit_of_measurement: W
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').inverseMaxPower }}"
+
+      - name: Zendure plafond charge
+        unique_id: zendure_solarflow4000mix_plafond_charge
+        default_entity_id: sensor.zendure_solarflow4000mix_plafond_charge
+        unit_of_measurement: W
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').chargeMaxLimit }}"
+
+      - name: Zendure SOC min
+        unique_id: zendure_solarflow4000mix_soc_min
+        default_entity_id: sensor.zendure_solarflow4000mix_soc_min
+        unit_of_measurement: "%"
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').minSoc | int(0) / 10 }}"
+
+      - name: Zendure SOC max
+        unique_id: zendure_solarflow4000mix_soc_max
+        default_entity_id: sensor.zendure_solarflow4000mix_soc_max
+        unit_of_measurement: "%"
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').socSet | int(0) / 10 }}"
+
+      - name: Zendure mode AC
+        unique_id: zendure_solarflow4000mix_mode_ac
+        default_entity_id: sensor.zendure_solarflow4000mix_mode_ac
+        availability: *zav
+        state: >-
+          {{ {1: 'Charge', 2: 'Décharge'}.get(state_attr('sensor.zendure_solarflow4000mix_raw','properties').acMode | int(0), 'Inconnu') }}
+
+      - name: Zendure injection PV
+        unique_id: zendure_solarflow4000mix_injection_pv
+        default_entity_id: sensor.zendure_solarflow4000mix_injection_pv
+        availability: *zav
+        state: >-
+          {{ {0: 'Auto', 1: 'Autorisée', 2: 'Interdite'}.get(state_attr('sensor.zendure_solarflow4000mix_raw','properties').gridReverse | int(-1), 'Inconnu') }}
+
+      # ---- Diagnostic ----
+      - name: Zendure nombre de packs
+        unique_id: zendure_solarflow4000mix_nombre_de_packs
+        default_entity_id: sensor.zendure_solarflow4000mix_nombre_de_packs
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').packNum }}"
+
+      # En liaison filaire (RJ45) la Zendure renvoie rssi = 0, valeur
+      # impossible en dBm. On la remonte en « unknown » pour ne pas polluer
+      # l'historique et les statistiques avec un 0 qui ressemble à une mesure.
+      - name: Zendure WiFi RSSI
+        unique_id: zendure_solarflow4000mix_wifi_rssi
+        default_entity_id: sensor.zendure_solarflow4000mix_wifi_rssi
+        unit_of_measurement: dBm
+        device_class: signal_strength
+        state_class: measurement
+        availability: *zav
+        state: >-
+          {% set r = state_attr('sensor.zendure_solarflow4000mix_raw','properties').rssi | int(0) %}
+          {{ r if r < 0 else none }}
+        attributes:
+          liaison: >-
+            {% set r = state_attr('sensor.zendure_solarflow4000mix_raw','properties').rssi | int(0) %}
+            {{ 'WiFi' if r < 0 else 'Ethernet' }}
+
+      # ---- Pack 1 ----
+      - name: Zendure pack 1 SOC
+        unique_id: zendure_solarflow4000mix_pack_1_soc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: &zp1 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 0 }}"
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].socLevel }}"
+
+      - name: Zendure pack 1 puissance
+        unique_id: zendure_solarflow4000mix_pack_1_puissance
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_puissance
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zp1
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].power }}"
+
+      - name: Zendure pack 1 tension
+        unique_id: zendure_solarflow4000mix_pack_1_tension
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_tension
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        availability: *zp1
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].totalVol | int(0) / 100 }}"
+
+      - name: Zendure pack 1 courant
+        unique_id: zendure_solarflow4000mix_pack_1_courant
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_courant
+        unit_of_measurement: A
+        device_class: current
+        state_class: measurement
+        availability: *zp1
+        # int16 signé en dixièmes d'A — négatif = décharge
+        state: >-
+          {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].batcur | int(0) %}
+          {{ ((c - 65536) if c > 32767 else c) / 10 }}
+
+      - name: Zendure pack 1 temperature
+        unique_id: zendure_solarflow4000mix_pack_1_temperature
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: *zp1
+        state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].maxTemp | int(2931)) - 2731) / 10 }}"
+
+      - name: Zendure pack 1 ecart cellules
+        unique_id: zendure_solarflow4000mix_pack_1_ecart_cellules
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_1_ecart_cellules
+        unit_of_measurement: mV
+        state_class: measurement
+        availability: *zp1
+        state: >-
+          {% set d = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0] %}
+          {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
+
+      # ---- Pack 2 (présent si la batterie en compte au moins 2) ----
+      - name: Zendure pack 2 SOC
+        unique_id: zendure_solarflow4000mix_pack_2_soc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: &zp2 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 1 }}"
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].socLevel }}"
+
+      - name: Zendure pack 2 puissance
+        unique_id: zendure_solarflow4000mix_pack_2_puissance
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_puissance
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zp2
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].power }}"
+
+      - name: Zendure pack 2 tension
+        unique_id: zendure_solarflow4000mix_pack_2_tension
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_tension
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        availability: *zp2
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].totalVol | int(0) / 100 }}"
+
+      - name: Zendure pack 2 courant
+        unique_id: zendure_solarflow4000mix_pack_2_courant
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_courant
+        unit_of_measurement: A
+        device_class: current
+        state_class: measurement
+        availability: *zp2
+        # int16 signé en dixièmes d'A — négatif = décharge
+        state: >-
+          {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].batcur | int(0) %}
+          {{ ((c - 65536) if c > 32767 else c) / 10 }}
+
+      - name: Zendure pack 2 temperature
+        unique_id: zendure_solarflow4000mix_pack_2_temperature
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: *zp2
+        state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].maxTemp | int(2931)) - 2731) / 10 }}"
+
+      - name: Zendure pack 2 ecart cellules
+        unique_id: zendure_solarflow4000mix_pack_2_ecart_cellules
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_2_ecart_cellules
+        unit_of_measurement: mV
+        state_class: measurement
+        availability: *zp2
+        state: >-
+          {% set d = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1] %}
+          {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
+
+      # ---- Pack 3 (présent si la batterie en compte au moins 3) ----
+      - name: Zendure pack 3 SOC
+        unique_id: zendure_solarflow4000mix_pack_3_soc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: &zp3 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 2 }}"
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].socLevel }}"
+
+      - name: Zendure pack 3 puissance
+        unique_id: zendure_solarflow4000mix_pack_3_puissance
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_puissance
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zp3
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].power }}"
+
+      - name: Zendure pack 3 tension
+        unique_id: zendure_solarflow4000mix_pack_3_tension
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_tension
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        availability: *zp3
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].totalVol | int(0) / 100 }}"
+
+      - name: Zendure pack 3 courant
+        unique_id: zendure_solarflow4000mix_pack_3_courant
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_courant
+        unit_of_measurement: A
+        device_class: current
+        state_class: measurement
+        availability: *zp3
+        # int16 signé en dixièmes d'A — négatif = décharge
+        state: >-
+          {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].batcur | int(0) %}
+          {{ ((c - 65536) if c > 32767 else c) / 10 }}
+
+      - name: Zendure pack 3 temperature
+        unique_id: zendure_solarflow4000mix_pack_3_temperature
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: *zp3
+        state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].maxTemp | int(2931)) - 2731) / 10 }}"
+
+      - name: Zendure pack 3 ecart cellules
+        unique_id: zendure_solarflow4000mix_pack_3_ecart_cellules
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_3_ecart_cellules
+        unit_of_measurement: mV
+        state_class: measurement
+        availability: *zp3
+        state: >-
+          {% set d = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2] %}
+          {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
+
+      # ---- Pack 4 (présent si la batterie en compte au moins 4) ----
+      - name: Zendure pack 4 SOC
+        unique_id: zendure_solarflow4000mix_pack_4_soc
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        availability: &zp4 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 3 }}"
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].socLevel }}"
+
+      - name: Zendure pack 4 puissance
+        unique_id: zendure_solarflow4000mix_pack_4_puissance
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_puissance
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        availability: *zp4
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].power }}"
+
+      - name: Zendure pack 4 tension
+        unique_id: zendure_solarflow4000mix_pack_4_tension
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_tension
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        availability: *zp4
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].totalVol | int(0) / 100 }}"
+
+      - name: Zendure pack 4 courant
+        unique_id: zendure_solarflow4000mix_pack_4_courant
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_courant
+        unit_of_measurement: A
+        device_class: current
+        state_class: measurement
+        availability: *zp4
+        # int16 signé en dixièmes d'A — négatif = décharge
+        state: >-
+          {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].batcur | int(0) %}
+          {{ ((c - 65536) if c > 32767 else c) / 10 }}
+
+      - name: Zendure pack 4 temperature
+        unique_id: zendure_solarflow4000mix_pack_4_temperature
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: *zp4
+        state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].maxTemp | int(2931)) - 2731) / 10 }}"
+
+      - name: Zendure pack 4 ecart cellules
+        unique_id: zendure_solarflow4000mix_pack_4_ecart_cellules
+        default_entity_id: sensor.zendure_solarflow4000mix_pack_4_ecart_cellules
+        unit_of_measurement: mV
+        state_class: measurement
+        availability: *zp4
+        state: >-
+          {% set d = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3] %}
+          {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
+
+      # ---- Agrégats tous packs (utiles dès qu'il y en a plusieurs) ----
+      - name: Zendure ecart cellules max
+        unique_id: zendure_solarflow4000mix_ecart_cellules_max
+        default_entity_id: sensor.zendure_solarflow4000mix_ecart_cellules_max
+        unit_of_measurement: mV
+        state_class: measurement
+        availability: &zpany "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 0 }}"
+        state: >-
+          {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
+          {{ packs | map(attribute='maxVol') | map('int') | list | max
+             - packs | map(attribute='minVol') | map('int') | list | min }}
+
+      - name: Zendure temperature pack max
+        unique_id: zendure_solarflow4000mix_temperature_pack_max
+        default_entity_id: sensor.zendure_solarflow4000mix_temperature_pack_max
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: *zpany
+        state: >-
+          {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
+          {{ ((packs | map(attribute='maxTemp') | map('int') | list | max) - 2731) / 10 }}
+
+      - name: Zendure ecart SOC packs
+        unique_id: zendure_solarflow4000mix_ecart_soc_packs
+        default_entity_id: sensor.zendure_solarflow4000mix_ecart_soc_packs
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: *zpany
+        state: >-
+          {% set s = (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | map(attribute='socLevel') | map('int') | list %}
+          {{ s | max - s | min }}
+
+  - binary_sensor:
+      - name: Zendure erreur
+        unique_id: zendure_solarflow4000mix_erreur
+        default_entity_id: binary_sensor.zendure_solarflow4000mix_erreur
+        device_class: problem
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').is_error | int(0) == 1 }}"
+
+      - name: Zendure reseau connecte
+        unique_id: zendure_solarflow4000mix_reseau_connecte
+        default_entity_id: binary_sensor.zendure_solarflow4000mix_reseau_connecte
+        device_class: connectivity
+        availability: *zav
+        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').gridState | int(0) == 1 }}"
+
+# ---------------------------------------------------------------------
+# Énergie (l'appareil ne fournit aucun compteur cumulé)
+# ---------------------------------------------------------------------
+sensor:
+  - platform: integration
+    source: sensor.zendure_solarflow4000mix_charge_batterie
+    name: Zendure SolarFlow4000Mix energie chargee
+    unique_id: zendure_solarflow4000mix_energie_chargee
+    unit_prefix: k
+    round: 3
+    method: left
+    max_sub_interval:
+      minutes: 1
+
+  - platform: integration
+    source: sensor.zendure_solarflow4000mix_decharge_batterie
+    name: Zendure SolarFlow4000Mix energie dechargee
+    unique_id: zendure_solarflow4000mix_energie_dechargee
+    unit_prefix: k
+    round: 3
+    method: left
+    max_sub_interval:
+      minutes: 1
+
+  - platform: integration
+    source: sensor.zendure_solarflow4000mix_pv
+    name: Zendure SolarFlow4000Mix energie PV
+    unique_id: zendure_solarflow4000mix_energie_pv
+    unit_prefix: k
+    round: 3
+    method: left
+    max_sub_interval:
+      minutes: 1
+
+# ---------------------------------------------------------------------
+# Bornes SOC éditables (synchronisées avec l'appareil)
+#  - input_number = consigne, sensor..._soc_min / _soc_max = valeur réelle lue
+#  - toute modification est écrite dans la Zendure, toute valeur lue
+#    différente réaligne la consigne (pas de boucle : on n'écrit que si ça diffère)
+# ---------------------------------------------------------------------
+input_number:
+  zendure_solarflow4000mix_soc_min_consigne:
+    name: Zendure SOC minimum
+    icon: mdi:battery-low
+    min: 0
+    max: 50
+    step: 1
+    mode: slider
+    unit_of_measurement: "%"
+
+  zendure_solarflow4000mix_soc_max_consigne:
+    name: Zendure SOC maximum
+    icon: mdi:battery-high
+    min: 70
+    max: 100
+    step: 1
+    mode: slider
+    unit_of_measurement: "%"
+
+# ---------------------------------------------------------------------
+# Écriture : POST /properties/write
+# ---------------------------------------------------------------------
+rest_command:
+  zendure_solarflow4000mix_write:
+    url: >-
+      http://{{ states('input_text.zendure_solarflow4000mix_ip')
+                if states('input_text.zendure_solarflow4000mix_ip') is match('^(\d{1,3}\.){3}\d{1,3}$')
+                else '0.0.0.0' }}/properties/write
+    method: POST
+    content_type: "application/json"
+    timeout: 20
+    payload: >-
+      {"sn":"{{ state_attr('sensor.zendure_solarflow4000mix_raw','sn') }}","properties":{{ props | to_json }}}
+
+script:
+  zendure_solarflow4000mix_set_power:
+    alias: Zendure SolarFlow4000Mix – consigne de puissance
+    description: "+ = décharge vers la maison, − = charge depuis le réseau, 0 = veille"
+    mode: queued
+    max: 2
+    fields:
+      power:
+        description: Puissance en W
+        example: 500
+        selector:
+          number:
+            min: -4000
+            max: 4000
+            step: 10
+            unit_of_measurement: W
+    sequence:
+      - variables:
+          p: "{{ [[power | int(0), 4000] | min, -4000] | max }}"
+          props: >-
+            {% if p > 0 %}{{ {'smartMode': 1, 'acMode': 2, 'outputLimit': p, 'inputLimit': 0} }}
+            {% elif p < 0 %}{{ {'smartMode': 1, 'acMode': 1, 'inputLimit': -p, 'outputLimit': 0} }}
+            {% else %}{{ {'smartMode': 1, 'outputLimit': 0, 'inputLimit': 0} }}{% endif %}
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ props }}"
+
+  zendure_solarflow4000mix_set_plafonds:
+    alias: Zendure SolarFlow4000Mix – plafonds onduleur
+    description: "Écrit inverseMaxPower (sortie) et chargeMaxLimit (charge), en flash"
+    fields:
+      decharge_max:
+        selector: {number: {min: 0, max: 4000, step: 100, unit_of_measurement: W}}
+      charge_max:
+        selector: {number: {min: 0, max: 4000, step: 100, unit_of_measurement: W}}
+    sequence:
+      # smartMode 0 : écriture persistante (rare, pas dans une boucle)
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: >-
+            {{ {'smartMode': 0, 'inverseMaxPower': decharge_max | int, 'chargeMaxLimit': charge_max | int} }}
+      - delay: 2
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 1} }}"
+
+  zendure_solarflow4000mix_set_soc:
+    alias: Zendure SolarFlow4000Mix – bornes SOC
+    description: "Écrit minSoc et socSet (en ‰ dans l'API), en flash"
+    mode: single
+    max_exceeded: silent
+    fields:
+      min_soc:
+        name: SOC minimum
+        required: true
+        selector: {number: {min: 0, max: 50, step: 1, unit_of_measurement: "%"}}
+      max_soc:
+        name: SOC maximum
+        required: true
+        selector: {number: {min: 70, max: 100, step: 1, unit_of_measurement: "%"}}
+    sequence:
+      - variables:
+          mn: "{{ [[min_soc | int(10), 0] | max, 50] | min }}"
+          mx: "{{ [[max_soc | int(100), 70] | max, 100] | min }}"
+      - condition: template
+        value_template: "{{ mx > mn }}"
+      # smartMode 0 : écriture persistante (flash), réglage rare
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 0, 'minSoc': mn * 10, 'socSet': mx * 10} }}"
+      - delay: 2
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 1} }}"
+      - delay: 3
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.zendure_solarflow4000mix_raw
+
+  zendure_solarflow4000mix_set_injection_pv:
+    alias: Zendure SolarFlow4000Mix – injection PV
+    description: "gridReverse : autorise ou non le renvoi du surplus PV vers le réseau"
+    fields:
+      injection:
+        name: Injection PV
+        required: true
+        selector:
+          select:
+            options:
+              - {label: Auto, value: "0"}
+              - {label: Autorisée, value: "1"}
+              - {label: Interdite, value: "2"}
+    sequence:
+      # smartMode 0 : écriture persistante (flash), réglage rare
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 0, 'gridReverse': injection | int} }}"
+      - delay: 2
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 1} }}"
+
+  zendure_solarflow4000mix_set_mode_secours:
+    alias: Zendure SolarFlow4000Mix – mode secours
+    description: "gridOffMode : comportement de la sortie secours en coupure réseau"
+    fields:
+      mode_secours:
+        name: Mode secours
+        required: true
+        selector:
+          select:
+            options:
+              - {label: Standard, value: "0"}
+              - {label: Économique, value: "1"}
+              - {label: Arrêt, value: "2"}
+    sequence:
+      # smartMode 0 : écriture persistante (flash), réglage rare
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 0, 'gridOffMode': mode_secours | int} }}"
+      - delay: 2
+      - action: rest_command.zendure_solarflow4000mix_write
+        data:
+          props: "{{ {'smartMode': 1} }}"
+
+# ---------------------------------------------------------------------
+# Sécurité : la régulation tourne dans le script Shelly (id 1).
+# S'il s'arrête, la Zendure garderait sa dernière consigne -> remise à 0.
+# ---------------------------------------------------------------------
+binary_sensor:
+  - platform: rest
+    name: Zendure SolarFlow4000Mix script shelly
+    unique_id: zendure_solarflow4000mix_script_shelly
+    resource_template: >-
+      http://{{ states('input_text.zendure_solarflow4000mix_shelly_ip')
+                if states('input_text.zendure_solarflow4000mix_shelly_ip') is match('^(\d{1,3}\.){3}\d{1,3}$')
+                else '0.0.0.0' }}/rpc/Script.GetStatus?id=1
+    scan_interval: 15
+    device_class: running
+    value_template: "{{ value_json.running }}"
+
+automation:
+  - id: zendure_solarflow4000mix_shelly_script_off
+    alias: Zendure SolarFlow4000Mix – arrêt script Shelly → veille
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.zendure_solarflow4000mix_script_shelly
+        to: "off"
+        for: "00:00:30"
+    actions:
+      - action: script.zendure_solarflow4000mix_set_power
+        data:
+          power: 0
+
+  # Zendure -> HA : la valeur réelle lue réaligne les curseurs
+  - id: zendure_solarflow4000mix_soc_sync_depuis_zendure
+    alias: Zendure SolarFlow4000Mix – bornes SOC ← Zendure
+    mode: queued
+    max: 10
+    triggers:
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_soc_min
+        id: min
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_soc_max
+        id: max
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.to_state.state not in ['unknown', 'unavailable', 'none', ''] }}
+    actions:
+      - variables:
+          cible: "{{ trigger.to_state.state | float | round(0) }}"
+          consigne: >-
+            {{ 'input_number.zendure_solarflow4000mix_soc_' ~ trigger.id ~ '_consigne' }}
+      - condition: template
+        value_template: "{{ states(consigne) | float(-1) | round(0) != cible }}"
+      - action: input_number.set_value
+        target:
+          entity_id: "{{ consigne }}"
+        data:
+          value: "{{ cible }}"
+
+  # HA -> Zendure : un curseur déplacé est écrit dans l'appareil
+  - id: zendure_solarflow4000mix_soc_vers_zendure
+    alias: Zendure SolarFlow4000Mix – bornes SOC → Zendure
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id:
+          - input_number.zendure_solarflow4000mix_soc_min_consigne
+          - input_number.zendure_solarflow4000mix_soc_max_consigne
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.from_state is not none
+             and trigger.from_state.state not in ['unknown', 'unavailable', '']
+             and trigger.to_state.state not in ['unknown', 'unavailable', '']
+             and trigger.from_state.state != trigger.to_state.state }}
+    actions:
+      # laisse le temps de bouger les deux curseurs avant d'écrire en flash
+      - delay: 5
+      - variables:
+          mn: "{{ states('input_number.zendure_solarflow4000mix_soc_min_consigne') | float(10) | round(0) }}"
+          mx: "{{ states('input_number.zendure_solarflow4000mix_soc_max_consigne') | float(100) | round(0) }}"
+      # n'écrit que si la Zendure n'est pas déjà sur ces valeurs (anti-boucle)
+      - condition: template
+        value_template: >-
+          {{ mx > mn
+             and (states('sensor.zendure_solarflow4000mix_soc_min') | float(-1) | round(0) != mn
+                  or states('sensor.zendure_solarflow4000mix_soc_max') | float(-1) | round(0) != mx) }}
+      - action: script.zendure_solarflow4000mix_set_soc
+        data:
+          min_soc: "{{ mn }}"
+          max_soc: "{{ mx }}"

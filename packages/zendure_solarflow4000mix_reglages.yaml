@@ -1,0 +1,249 @@
+# =====================================================================
+# packages/zendure_solarflow4000mix_reglages.yaml
+# Réglages avancés du script Shelly, stockés dans le KVS du Shelly.
+# HA ne sert qu'à les éditer : la régulation reste 100 % Shelly -> Zendure.
+#
+# Aucune adresse IP n'est codée en dur dans ce dépôt :
+# - l'IP du Shelly se saisit UNE FOIS dans l'interface HA
+#   (input_text.zendure_solarflow4000mix_shelly_ip, onglet Réglages)
+# - l'IP de la Zendure est découverte toute seule par le script Shelly
+#
+# - Au démarrage de HA, les valeurs sont relues depuis le Shelly
+# - Toute modification dans HA est poussée dans le KVS du Shelly,
+#   le script la prend en compte immédiatement
+# =====================================================================
+
+input_text:
+  # ---- La seule chose à renseigner de tout le projet ----
+  # Tant qu'elle est vide, les capteurs Shelly et Zendure restent
+  # indisponibles : c'est normal, renseigne-la dans l'onglet Réglages.
+  zendure_solarflow4000mix_shelly_ip:
+    name: Shelly adresse IP
+    icon: mdi:ip-network-outline
+    pattern: '^$|^(\d{1,3}\.){3}\d{1,3}$'
+    max: 15
+
+  # Renseignée automatiquement par le script Shelly : informatif, mais
+  # modifiable pour forcer une adresse.
+  zendure_solarflow4000mix_ip:
+    name: Zendure adresse IP
+    icon: mdi:ip-network
+    pattern: '^$|^(\d{1,3}\.){3}\d{1,3}$'
+    max: 15
+
+input_number:
+  zendure_solarflow4000mix_periode:
+    name: Zendure période de rafraîchissement
+    icon: mdi:timer-outline
+    # Plancher 1 s : en dessous, le serveur HTTP de la Zendure sature et ses
+    # réponses passent de ~90 ms à plusieurs secondes, ce qui fait décrocher
+    # les capteurs. Descendre ici n'apporte aucune réactivité supplémentaire,
+    # la pince ne fournissant qu'une mesure par seconde.
+    min: 1
+    max: 10
+    step: 0.5
+    mode: box
+    unit_of_measurement: s
+  zendure_solarflow4000mix_tick:
+    name: Zendure pas de scrutation
+    icon: mdi:timer-sand
+    min: 100
+    max: 2000
+    step: 50
+    mode: box
+    unit_of_measurement: ms
+  zendure_solarflow4000mix_gain:
+    name: Zendure gain
+    icon: mdi:tune-vertical
+    min: 0.1
+    max: 1
+    step: 0.05
+    mode: slider
+  zendure_solarflow4000mix_zone_morte:
+    name: Zendure zone morte
+    icon: mdi:arrow-collapse-vertical
+    min: 0
+    max: 200
+    step: 5
+    mode: box
+    unit_of_measurement: W
+  zendure_solarflow4000mix_hysteresis:
+    name: Zendure hystérésis
+    icon: mdi:sine-wave
+    min: 0
+    max: 200
+    step: 5
+    mode: box
+    unit_of_measurement: W
+  zendure_solarflow4000mix_seuil_reveil:
+    name: Zendure seuil de réveil
+    icon: mdi:alarm
+    min: 0
+    max: 500
+    step: 10
+    mode: box
+    unit_of_measurement: W
+  zendure_solarflow4000mix_delai_bascule:
+    name: Zendure délai de bascule
+    icon: mdi:swap-horizontal-circle-outline
+    min: 0
+    max: 300
+    step: 5
+    mode: box
+    unit_of_measurement: s
+
+# ---- Lecture de la config actuelle dans le Shelly ----
+rest:
+  # Tant que l'IP du Shelly n'est pas saisie (ou vaut unknown au démarrage),
+  # on vise 0.0.0.0 : le capteur reste simplement indisponible, au lieu de
+  # produire une URL malformée qui inonderait le journal d'erreurs.
+  - resource_template: >-
+      http://{{ states('input_text.zendure_solarflow4000mix_shelly_ip')
+                if states('input_text.zendure_solarflow4000mix_shelly_ip') is match('^(\d{1,3}\.){3}\d{1,3}$')
+                else '0.0.0.0' }}/rpc/KVS.GetMany?match=zendure_*
+    scan_interval: 60   # porte aussi l'IP de la Zendure : on la veut fraîche
+    timeout: 5
+    sensor:
+      - name: Zendure SolarFlow4000Mix config shelly
+        unique_id: zendure_solarflow4000mix_config_shelly
+        icon: mdi:cog-transfer
+        # État = dictionnaire JSON {cle: valeur} (formats KVS ancien et récent)
+        value_template: >-
+          {% set it = value_json['items'] %}
+          {% set ns = namespace(d={}) %}
+          {% if it is mapping %}
+            {% for k, v in it.items() %}{% set ns.d = dict(ns.d, **{k: v.value}) %}{% endfor %}
+          {% else %}
+            {% for x in it %}{% set ns.d = dict(ns.d, **{x.key: x.value}) %}{% endfor %}
+          {% endif %}
+          {{ ns.d | to_json }}
+
+# ---- Écriture d'une clé KVS ----
+rest_command:
+  zendure_solarflow4000mix_kvs_set:
+    url: >-
+      http://{{ states('input_text.zendure_solarflow4000mix_shelly_ip')
+                if states('input_text.zendure_solarflow4000mix_shelly_ip') is match('^(\d{1,3}\.){3}\d{1,3}$')
+                else '0.0.0.0' }}/rpc/KVS.Set
+    method: POST
+    content_type: "application/json"
+    timeout: 5
+    payload: '{"key":"{{ key }}","value":{{ value | to_json }}}'
+
+automation:
+  # Shelly -> HA : au démarrage, on aligne les champs HA sur le Shelly
+  - id: zendure_solarflow4000mix_reglages_sync_depuis_shelly
+    alias: Zendure SolarFlow4000Mix – réglages ← Shelly
+    mode: single
+    triggers:
+      - trigger: homeassistant
+        event: start
+    actions:
+      - delay: 20
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.zendure_solarflow4000mix_config_shelly
+      - delay: 3
+      - variables:
+          cfg: "{{ states('sensor.zendure_solarflow4000mix_config_shelly') | from_json(default={}) }}"
+      - condition: template
+        value_template: "{{ cfg is mapping and cfg | count > 0 }}"
+      - action: input_text.set_value
+        target: {entity_id: input_text.zendure_solarflow4000mix_ip}
+        data:
+          value: >-
+            {{ cfg.zendure_ip if cfg.zendure_ip is defined and cfg.zendure_ip
+               else states('input_text.zendure_solarflow4000mix_ip') }}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_periode}
+        data: {value: "{{ (cfg.zendure_period | default(1000) | float) / 1000 }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_tick}
+        data: {value: "{{ cfg.zendure_tick | default(250) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_gain}
+        data: {value: "{{ cfg.zendure_gain | default(0.9) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_zone_morte}
+        data: {value: "{{ cfg.zendure_dead | default(30) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_hysteresis}
+        data: {value: "{{ cfg.zendure_hyst | default(25) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_seuil_reveil}
+        data: {value: "{{ cfg.zendure_wake | default(80) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_delai_bascule}
+        data: {value: "{{ cfg.zendure_flip | default(30) | float }}"}
+
+  # HA -> Shelly : chaque modification est poussée dans le KVS
+  - id: zendure_solarflow4000mix_reglages_vers_shelly
+    alias: Zendure SolarFlow4000Mix – réglages → Shelly
+    mode: queued
+    max: 10
+    triggers:
+      - trigger: state
+        entity_id: input_text.zendure_solarflow4000mix_ip
+        id: zendure_ip
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_periode
+        id: zendure_period
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_tick
+        id: zendure_tick
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_gain
+        id: zendure_gain
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_zone_morte
+        id: zendure_dead
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_hysteresis
+        id: zendure_hyst
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_seuil_reveil
+        id: zendure_wake
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_delai_bascule
+        id: zendure_flip
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.from_state is not none
+             and trigger.from_state.state not in ['unknown', 'unavailable', '']
+             and trigger.to_state.state not in ['unknown', 'unavailable', '']
+             and trigger.from_state.state != trigger.to_state.state }}
+    actions:
+      - variables:
+          raw: "{{ trigger.to_state.state }}"
+          value: >-
+            {% if trigger.id == 'zendure_ip' %}{{ raw }}
+            {% elif trigger.id == 'zendure_period' %}{{ (raw | float * 1000) | int }}
+            {% elif trigger.id == 'zendure_gain' %}{{ raw | float }}
+            {% else %}{{ raw | float | int }}{% endif %}
+      - action: rest_command.zendure_solarflow4000mix_kvs_set
+        data:
+          key: "{{ trigger.id }}"
+          value: "{{ value }}"
+
+  # Le script Shelly peut retrouver la Zendure tout seul et réécrire zendure_ip.
+  # Sans ce miroir, l'onglet Réglages continuerait d'afficher l'ancienne IP —
+  # et la repousserait dans le KVS à la moindre modification.
+  - id: zendure_solarflow4000mix_ip_decouverte
+    alias: Zendure SolarFlow4000Mix – IP découverte → HA
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_config_shelly
+    variables:
+      ip: >-
+        {{ (states('sensor.zendure_solarflow4000mix_config_shelly')
+            | from_json(default={})).get('zendure_ip', '') }}
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ ip | count > 6 and ip != states('input_text.zendure_solarflow4000mix_ip') }}
+    actions:
+      - action: input_text.set_value
+        target: {entity_id: input_text.zendure_solarflow4000mix_ip}
+        data: {value: "{{ ip }}"}

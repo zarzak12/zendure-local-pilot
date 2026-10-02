@@ -1,0 +1,17 @@
+# --- Configuration d'IDE (contient des chemins et des noms d'utilisateur) ---
+.idea/
+*.iml
+.vscode/
+
+# --- Fichiers personnalisés générés localement ---
+# personnaliser.ps1 / .sh écrivent ici le dashboard adapté à TON installation :
+# il contient l'identifiant de ton Shelly, il n'a rien à faire sur GitHub.
+dashboard/dashboard-perso.yaml
+*.local.yaml
+secrets.yaml
+
+# --- Divers ---
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
