@@ -1,5 +1,10 @@
 # Zendure SolarFlow 4000 MIX PRO — pilotage 100 % local (Shelly Pro 3EM + Home Assistant)
 
+[![Licence : MIT](https://img.shields.io/badge/Licence-MIT-green.svg)](LICENSE)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.10%2B-41BDF5?logo=homeassistant&logoColor=white)
+![Shelly Pro 3EM](https://img.shields.io/badge/Shelly-Pro%203EM-FF5C00)
+![100 % local](https://img.shields.io/badge/Cloud-non%20requis-success)
+
 Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'API locale
 [zenSDK](https://github.com/Zendure/zenSDK), avec une régulation **autoconsommation
 (injection zéro)** qui tourne **directement dans le Shelly Pro 3EM**.
@@ -33,6 +38,7 @@ Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'A
   - [Découverte automatique de la Zendure](#découverte-automatique-de-la-zendure)
 - [Dépannage](#dépannage)
 - [Sécurité et avertissements](#sécurité-et-avertissements)
+- [Licence](#licence)
 - [Crédits](#crédits)
 
 ---
@@ -831,6 +837,21 @@ Rapport brut Zendure              → http://IP_ZENDURE/properties/report
   interdite ou nécessiter une déclaration. Utilise `gridReverse = 2` (Interdite) si besoin.
 - ⚠️ **Aucune garantie** : ce projet est fourni tel quel, sans affiliation avec Zendure ni
   Shelly. Tu l'utilises à tes risques.
+
+---
+
+## Licence
+
+Ce projet est distribué sous licence **MIT** — voir le fichier [LICENSE](LICENSE).
+
+En résumé : tu peux l'utiliser, le modifier, le redistribuer et même le vendre, y compris
+dans un projet propriétaire, à la seule condition de conserver la mention de copyright et
+le texte de la licence. En contrepartie, le logiciel est fourni **sans aucune garantie** et
+l'auteur ne peut être tenu responsable des dommages — ce qui mérite d'être gardé à l'esprit
+quand on pilote une batterie raccordée au réseau électrique.
+
+Ce dépôt n'est affilié ni à **Zendure** ni à **Shelly**. Les marques citées appartiennent à
+leurs propriétaires respectifs.
 
 ---
 
