@@ -829,6 +829,19 @@ Le repli ne s'applique qu'aux modes régulés (ni **Arrêt**, ni **Manuel**, où
 consigne figée est voulue) et ne fait rien si la consigne est déjà à zéro. La
 régulation normale reprend ensuite d'elle-même.
 
+**Pourquoi le filet côté Home Assistant ne suffisait pas.** Une automatisation
+remet déjà la consigne à 0 W quand `binary_sensor...._script_shelly` reste à
+*off* pendant 30 s. Mais elle ne surveille que l'**arrêt** du script : dans la
+panne décrite ci-dessus, le script affichait toujours `running: true`, le
+binary_sensor restait à *on*, et ce filet ne se déclenchait jamais. Les deux
+protections sont donc complémentaires — l'une couvre le script mort, l'autre le
+script vivant mais muet. C'est aussi pour cela que le repli de 90 s vit **dans
+le Shelly** : il doit fonctionner même si Home Assistant est éteint.
+
+> Vérifié sur matériel : consigne de 150 W maintenue **3 minutes sans aucune
+> écriture**, sans retour à zéro. La batterie ne se protège pas toute seule —
+> c'est au pilote de le faire.
+
 Tu verras ces messages dans la console du script si un incident survient :
 
 ```
