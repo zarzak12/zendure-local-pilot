@@ -50,15 +50,23 @@ input_number:
     icon: mdi:battery
 
 automation:
-  # 8 kWh = un pack de type 70. On ne pose cette valeur que si le réglage n'a
-  # jamais été renseigné : une installation neuve fonctionne du premier coup,
-  # et une mise à jour ne touche pas à la capacité déjà saisie.
+  # L'API ne renvoie pas la capacité, mais elle renvoie packType et packNum :
+  # sensor..._capacite_nominale_totale la déduit (8 kWh par pack de type 70).
+  # On s'en sert pour renseigner le réglage tout seul — y compris chez un
+  # utilisateur à plusieurs packs, qui n'a donc rien à calculer.
+  # Garde-fou : on n'agit que si le réglage n'a *jamais* été renseigné, pour ne
+  # jamais écraser une valeur saisie volontairement.
   - id: zendure_solarflow4000mix_capacite_defaut
-    alias: Zendure SolarFlow4000Mix – capacité par défaut à la 1re installation
+    alias: Zendure SolarFlow4000Mix – capacité détectée à la 1re installation
     mode: single
     triggers:
       - trigger: homeassistant
         event: start
+      # La batterie peut répondre après le démarrage de HA : on guette aussi le
+      # moment où la capacité devient mesurable, sinon une installation neuve
+      # devrait attendre un redémarrage.
+      - trigger: state
+        entity_id: sensor.zendure_solarflow4000mix_capacite_nominale_totale
     conditions:
       - condition: template
         value_template: >-
@@ -68,7 +76,10 @@ automation:
       - delay: 10
       - action: input_number.set_value
         target: {entity_id: input_number.zendure_solarflow4000mix_capacite}
-        data: {value: 8}
+        data:
+          value: >-
+            {% set auto = states('sensor.zendure_solarflow4000mix_capacite_nominale_totale') | float(0) %}
+            {{ auto if auto > 0 else 8 }}
 
 template:
   - sensor:

@@ -848,8 +848,14 @@ automatiquement dès que la batterie les remonte dans `packData`. Les cartes du
 dashboard sont conditionnelles, et trois agrégats (`ecart_soc_packs`,
 `ecart_cellules_max`, `temperature_pack_max`) s'affichent dès le 2ᵉ pack.
 
-Seule action manuelle : ajuster `input_number.zendure_solarflow4000mix_capacite`
-(8 kWh par pack de type 70). Pour un 5ᵉ pack, duplique un bloc `pack_4_*` en
+Seule action manuelle : **ajuster `input_number.zendure_solarflow4000mix_capacite`**
+(8 kWh par pack de type 70). La détection automatique ne joue qu'à la première
+installation, pour ne jamais écraser un réglage voulu : elle ne se redéclenchera
+donc pas toute seule quand tu ajouteras un pack. Reporte simplement la valeur de
+`sensor.zendure_solarflow4000mix_capacite_nominale_totale`, qui, elle, suit le
+nombre de packs en temps réel.
+
+Pour un 5ᵉ pack, duplique un bloc `pack_4_*` en
 remplaçant `packData[3]` par `packData[4]`.
 
 ### Utiliser un Shelly en triphasé
