@@ -51,6 +51,22 @@ let Z = null, ticks = 0, idleTicks = 0;
 let zFail = 0, scanning = false, scanStep = 0, scanBase = 0, scanPrefix = "", idlePoll = 0;
 let SCAN_AFTER = 5;
 let zBusy = false, wBusy = false, writeGen = 0;
+
+// ---- Garde-fous ----
+// Toutes les écritures passent par zBusy/wBusy. Ces verrous ne sont relâchés
+// que dans le rappel d'un appel HTTP : si un rappel n'arrive jamais (socket
+// perdue, pile RPC du Shelly saturée), le verrou reste armé pour toujours et le
+// script cesse d'écrire *sans s'arrêter* — il affiche encore running: true.
+// Or la Zendure conserve indéfiniment sa dernière consigne : un blocage survenu
+// en pleine décharge la laisse vider la batterie dans le réseau. D'où deux
+// filets indépendants :
+//   LOCK_MAX : au-delà, un verrou est tenu pour perdu et libéré d'office
+//   FAILSAFE : sans cycle de régulation abouti, on force un retour à 0 W
+let zBusyAt = 0, wBusyAt = 0, lastOk = 0;
+let LOCK_MAX = 20, FAILSAFE = 90;
+
+function zLock() { zBusy = true; zBusyAt = uptime(); }
+function wLock() { wBusy = true; wBusyAt = uptime(); }
 let lastG = null, wantReg = false, wantG = 0, wantMode = "arret";
 
 // ---- Composants virtuels (réglages courants, visibles dans HA) ----
@@ -224,6 +240,10 @@ function cleanup(done) {
 function ready() {
     loadCfg(function () {
         setStandby(false, true);
+        // Sans cette amorce, un redémarrage du script sur un Shelly en service
+        // depuis des heures verrait uptime() - lastOk dépasser FAILSAFE dès le
+        // premier poll et déclencherait un repli à 0 W injustifié.
+        lastOk = uptime();
         startTimers();
         // Aucune IP connue (1re installation) : on cherche la batterie tout de
         // suite plutôt que d'attendre 5 échecs sur une adresse vide.
@@ -244,7 +264,14 @@ function val(key, def) {
     return (s && s.value !== undefined && s.value !== null) ? s.value : def;
 }
 
-function uptime() { return Shelly.getComponentStatus("sys").uptime; }
+// Un statut système momentanément indisponible ne doit pas lever d'exception :
+// elle remonterait jusqu'au timer et interromprait la boucle de régulation.
+let lastUp = 0;
+function uptime() {
+    let s = Shelly.getComponentStatus("sys");
+    if (s && typeof s.uptime === "number") lastUp = s.uptime;
+    return lastUp;
+}
 
 function gridPower() {
     let s = Shelly.getComponentStatus("em1", 0);
@@ -259,7 +286,7 @@ function setStandby(v, force) {
 }
 
 function writeProps(sn, props, mode) {
-    wBusy = true;
+    wLock();
     writeGen++;   // périme l'instantané courant et toute lecture déjà en vol
     Shelly.call("HTTP.POST", {
         url: "http://" + CFG.ip + "/properties/write",
@@ -296,6 +323,13 @@ function write(sn, p, mode, acCur) {
 // publie une nouvelle mesure, pour écrire dans la foulée. Le poll entretient en
 // tâche de fond l'instantané de la Zendure, qui sort ainsi du chemin critique.
 function tick() {
+    // Une exception qui remonte jusqu'au timer interrompt la boucle : le script
+    // resterait "running" sans plus rien écrire, et la Zendure garderait sa
+    // consigne. On isole donc le corps du tick.
+    try { tickBody(); } catch (e) { print("Zendure: erreur dans le tick -", e); }
+}
+
+function tickBody() {
     ticks++;
     // gridPower() d'abord : la grande majorité des ticks n'a rien à faire, et
     // sortir tôt évite la lecture du composant virtuel de mode à chaque passage.
@@ -334,7 +368,7 @@ function fetchZ() {
     if (zBusy) return;
     if (scanning) { wantReg = false; return; }
     if (!validIp(CFG.ip)) { wantReg = false; onZFail(); return; }
-    zBusy = true;
+    zLock();
     let gen = writeGen;
     Shelly.call("HTTP.GET", { url: "http://" + CFG.ip + "/properties/report", timeout: 3 }, function (r, e) {
         zBusy = false;
@@ -357,7 +391,45 @@ function fetchZ() {
     });
 }
 
+// Un verrou encore armé après LOCK_MAX secondes ne peut plus correspondre à un
+// appel en cours (le plus long est un GET à 10 s) : son rappel a été perdu. On
+// le libère, quitte à tolérer brièvement deux appels concurrents — très
+// préférable à un arrêt définitif des écritures.
+function unstick() {
+    let now = uptime();
+    if (zBusy && now - zBusyAt > LOCK_MAX) {
+        zBusy = false;
+        print("Zendure: verrou de lecture perdu, libéré d'office");
+    }
+    if (wBusy && now - wBusyAt > LOCK_MAX) {
+        wBusy = false;
+        print("Zendure: verrou d'écriture perdu, libéré d'office");
+    }
+}
+
+// Dernier rempart. La Zendure n'a aucun chien de garde : tant que personne ne
+// lui écrit, elle maintient sa consigne, fût-elle de 3000 W en décharge alors
+// que le compteur injecte. Si plus aucun cycle de régulation n'aboutit, on la
+// ramène à 0 W ; la régulation normale repartira d'elle-même ensuite.
+function failsafe() {
+    if (FAILSAFE <= 0 || wBusy || scanning) return;
+    if (Z === null || !Z.sn) return;
+    let mode = val(VC[0].key, "arret");
+    if (mode === "arret" || mode === "manuel") return;
+    if (uptime() - lastOk < FAILSAFE) return;
+    lastOk = uptime();                       // on ne réessaie qu'au prochain cycle
+    if (Z.cur === 0) return;                 // déjà neutre : rien de dangereux à corriger
+    print("Zendure: aucune régulation depuis", FAILSAFE, "s - repli de sécurité à 0 W");
+    writeProps(Z.sn, { smartMode: 1, outputLimit: 0, inputLimit: 0 }, mode);
+}
+
 function poll() {
+    try { pollBody(); } catch (e) { print("Zendure: erreur dans le poll -", e); }
+}
+
+function pollBody() {
+    unstick();
+    failsafe();
     if (scanning) { scanNext(); return; }
     let mode = val(VC[0].key, "arret");
     // En arrêt il n'y a rien à réguler, mais on garde un contact espacé : c'est
@@ -383,7 +455,7 @@ function onZFail() {
     // HTTP sature si on l'interroge trop souvent) plutôt qu'avoir déménagé :
     // sans cette confirmation, une lenteur passagère déclencherait un balayage
     // inutile qui interromprait la régulation.
-    zBusy = true;
+    zLock();
     Shelly.call("HTTP.GET", { url: "http://" + CFG.ip + "/properties/report", timeout: 10 }, function (r, e) {
         zBusy = false;
         if (e === 0 && r && r.code === 200) {
@@ -429,7 +501,7 @@ function scanNext() {
         return;
     }
     let ip = scanPrefix + JSON.stringify(host);
-    zBusy = true;
+    zLock();
     Shelly.call("HTTP.GET", { url: "http://" + ip + "/properties/report", timeout: 2 }, function (r, e) {
         zBusy = false;
         if (!scanning || e !== 0 || !r || r.code !== 200) return;
@@ -449,6 +521,10 @@ function scanNext() {
 
 function decide(g, mode, z) {
     if (wBusy) return;
+    // Battement de cœur surveillé par failsafe(). Les sorties anticipées qui
+    // suivent (hystérésis, veille, bascule) sont des décisions légitimes : le
+    // cycle a abouti, même sans écriture.
+    lastOk = uptime();
     let regulated = (mode === "autoconso" || mode === "charge_seule" || mode === "decharge_seule");
     let cur = z.cur;
     let dMax = val(VC[1].key, 4000), cMax = val(VC[2].key, 4000);

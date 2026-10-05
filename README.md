@@ -36,6 +36,7 @@ Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'A
 - [État de santé des batteries](#état-de-santé-des-batteries)
 - [Pour les experts](#pour-les-experts)
   - [Découverte automatique de la Zendure](#découverte-automatique-de-la-zendure)
+  - [Garde-fous : pourquoi la batterie ne peut plus rester figée](#garde-fous--pourquoi-la-batterie-ne-peut-plus-rester-figée)
 - [Dépannage](#dépannage)
 - [Sécurité et avertissements](#sécurité-et-avertissements)
 - [Licence](#licence)
@@ -729,6 +730,44 @@ c'est ce qui permet de détecter un changement d'IP même au repos.
 > la MAC filaire est stable, la réservation DHCP fonctionne alors normalement.
 > Bonus : la liaison est plus fiable que le Wi-Fi pour une boucle temps réel.
 
+### Garde-fous : pourquoi la batterie ne peut plus rester figée
+
+Point crucial à comprendre : **la Zendure n'a aucun chien de garde**. Tant que
+personne ne lui écrit, elle maintient indéfiniment sa dernière consigne. Si la
+boucle de régulation se tait alors qu'elle venait d'ordonner 3000 W de décharge,
+la batterie continue de se vider dans le réseau — même en plein soleil.
+
+Or toutes les écritures passent par deux verrous (`zBusy` pour les lectures,
+`wBusy` pour les écritures) qui ne sont relâchés que dans le *rappel* d'un appel
+HTTP. Si ce rappel n'arrive jamais — socket perdue, pile RPC du Shelly saturée —
+le verrou reste armé pour toujours et le script cesse d'écrire **sans s'arrêter
+pour autant** : il affiche encore `running: true`, ce qui rend la panne
+particulièrement sournoise. Seul un redémarrage du script la débloquait.
+
+Trois protections indépendantes évitent désormais ce scénario :
+
+| Garde | Seuil | Rôle |
+|---|---|---|
+| Expiration des verrous | 20 s | un verrou plus vieux que le plus long appel (GET à 10 s) est tenu pour perdu et libéré d'office |
+| Repli de sécurité | 90 s | sans un seul cycle de régulation abouti, la consigne est ramenée à **0 W** |
+| Isolation des exceptions | — | une erreur dans le tick ou le poll est journalisée au lieu de tuer la boucle |
+
+Le repli ne s'applique qu'aux modes régulés (ni **Arrêt**, ni **Manuel**, où une
+consigne figée est voulue) et ne fait rien si la consigne est déjà à zéro. La
+régulation normale reprend ensuite d'elle-même.
+
+Tu verras ces messages dans la console du script si un incident survient :
+
+```
+Zendure: verrou de lecture perdu, libéré d'office
+Zendure: aucune régulation depuis 90 s - repli de sécurité à 0 W
+```
+
+Leur apparition occasionnelle n'est pas inquiétante — c'est le système qui se
+rattrape. En revanche, s'ils reviennent toutes les quelques minutes, c'est que
+la Zendure répond mal : augmente `zendure_period` (voir la note sur la
+saturation de son serveur HTTP).
+
 ### Ajouter un pack batterie
 
 Rien à coder : les packs **2 à 4** sont déjà déclarés et apparaissent
@@ -812,6 +851,7 @@ sa dernière consigne.
 | « Rendement charge/décharge » à *Indisponible* | aucune mesure valide depuis le démarrage de HA | normal tant que la batterie n'a pas chargé/déchargé au moins une fois à plus de 50 W sans PV ; la valeur est ensuite conservée |
 | Une entité Shelly porte un nom incohérent (`..._zendure_decharge_max_2`) | l'`entity_id` a été figé lors d'un doublon créé par une ancienne version du script | renomme l'entité dans HA (⚙️ → ID d'entité) ; le renommage côté Shelly ne suffit pas |
 | Réglages avancés non synchronisés au démarrage | HA a lu avant que le Shelly réponde | déclenche manuellement l'automatisation « réglages ← Shelly » |
+| **La batterie reste figée sur une consigne** (ex. 3000 W en décharge alors que le compteur injecte), et tout rentre dans l'ordre en relançant le script | un rappel HTTP perdu laissait un verrou armé définitivement ; la Zendure, qui n'a aucun chien de garde, conservait la dernière consigne | **corrigé** : verrous à expiration + repli automatique à 0 W au bout de 90 s sans régulation. Mets le script à jour (étape 3) |
 
 **Logs utiles**
 
