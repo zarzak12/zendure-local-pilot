@@ -31,6 +31,7 @@ Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'A
   - [Étape 6 — Renseigner l'IP du Shelly](#étape-6--renseigner-lip-du-shelly)
   - [Étape 7 — Installer le dashboard](#étape-7--installer-le-dashboard)
 - [Utilisation](#utilisation)
+- [Mettre à jour](#mettre-à-jour)
 - [Référence des réglages](#référence-des-réglages)
 - [Référence des entités](#référence-des-entités)
 - [État de santé des batteries](#état-de-santé-des-batteries)
@@ -416,13 +417,14 @@ c'est normal.
 > change la ligne `state:` du capteur *Zendure SolarFlow4000Mix reseau* dans
 > `zendure_solarflow4000mix_dashboard.yaml`.
 
-Ajuste aussi, dans `zendure_solarflow4000mix_dashboard.yaml`, la capacité de ta batterie :
+La **capacité de ta batterie** n'a rien à éditer : **8 kWh** (un pack de type 70)
+est posé automatiquement à la première installation. Si tu as plusieurs packs,
+change la valeur depuis l'onglet **Réglages** du dashboard, ou dans
+*Paramètres → Appareils et services → Entités* →
+`input_number.zendure_solarflow4000mix_capacite`.
 
-```yaml
-input_number:
-  zendure_solarflow4000mix_capacite:
-    initial: 8          # kWh — 8,00 kWh pour un pack type 70
-```
+Elle est ensuite **conservée d'un redémarrage à l'autre** et survit aux mises à
+jour du projet.
 
 ---
 
@@ -503,6 +505,77 @@ Passe le mode en **Manuel** et écris la consigne :
 > 💡 Passe toujours par les **entités du Shelly**, jamais par
 > `script.zendure_solarflow4000mix_set_power` tant qu'un mode régulé est actif :
 > les deux se battraient pour écrire la consigne.
+
+---
+
+## Mettre à jour
+
+Un correctif a été publié sur GitHub et le projet est déjà installé chez toi ?
+Voici la marche à suivre. **Aucun de tes réglages n'est perdu** — la procédure
+est conçue pour ça, et la section *Ce qui est conservé* plus bas explique
+pourquoi.
+
+### 1. Récupérer la nouvelle version
+
+```bash
+cd zendure-local-pilot
+git pull
+```
+
+Pas de dépôt cloné ? Retélécharge le ZIP depuis GitHub (**Code → Download ZIP**).
+
+> Si `git pull` refuse à cause de modifications locales :
+> `git stash` → `git pull` → `git stash pop`.
+
+### 2. Appliquer ce qui a changé
+
+Trois briques indépendantes : **ne mets à jour que celles qui ont bougé**. Pour
+le savoir : `git log --oneline --name-only -5`, ou les notes de version.
+
+| Brique | Comment | Redémarrage HA |
+|---|---|---|
+| `scripts/*.js` | `tools\deploy_shelly.ps1 -Ip <IP_DU_SHELLY>` | non |
+| `packages/*.yaml` | recopie les fichiers dans `config/packages/` | **oui** |
+| `dashboard/*.yaml` | relance `tools\personnaliser.ps1`, puis recolle | non |
+
+Le déployeur relit le script après téléversement et affiche `verification OK` :
+tant que tu ne vois pas ce message, la mise à jour n'est pas allée au bout
+(l'éditeur web du Shelly tronque silencieusement au-delà de ~7 ko — d'où cet
+outil).
+
+### 3. Vérifier
+
+1. Console du script : `http://IP_DU_SHELLY/#/script/1` → la ligne
+   `Zendure cfg: {...}` doit afficher **tes** valeurs, pas celles par défaut.
+2. Le mode est toujours le tien (voir l'avertissement ci-dessous).
+3. Le compteur réseau revient vers 0 en quelques secondes.
+
+### Ce qui est conservé
+
+| Réglage | Où il vit | Sort d'une mise à jour |
+|---|---|---|
+| IP et SN de la batterie, période, gain, zone morte, hystérésis, seuil de réveil, délai d'inversion | KVS du Shelly | **intact** : au démarrage le script ne crée que les clés *absentes*, il n'écrase jamais une clé existante |
+| Mode, décharge/charge max, consigne manuelle, buffers, délai de veille | composants virtuels du Shelly | **intacts** : le redéploiement réécrit leur *configuration*, pas leur *valeur* |
+| Bornes SOC, capacité, cases du dashboard | helpers Home Assistant | **intacts** : HA restaure la dernière valeur au redémarrage |
+| Historique, statistiques, tableau Énergie | base de données HA | **intact** tant que les `entity_id` ne changent pas |
+
+Autrement dit : les fichiers du dépôt ne contiennent que de la *logique*, jamais
+tes valeurs. C'est précisément ce qui rend la mise à jour sans risque.
+
+> ⚠️ **Une seule exception : le mode peut revenir sur *Arrêt*.** Si une version
+> renomme ou ajoute une option de mode, le script détecte que la valeur
+> enregistrée n'existe plus dans la nouvelle liste et repasse sur **Arrêt** par
+> sécurité — plutôt que de régler sur une option au hasard. Resélectionne
+> simplement ton mode. C'est signalé dans les notes de version quand ça arrive.
+
+### Revenir en arrière
+
+```bash
+git log --oneline          # repère le commit qui marchait
+git checkout <sha> -- scripts/ packages/
+```
+
+Puis redéploie. Tes réglages, eux, n'ont pas bougé.
 
 ---
 

@@ -41,10 +41,34 @@ input_number:
     min: 0
     max: 60
     step: 0.01
-    initial: 8          # pack type 70 sur 4000 Mix = 8,00 kWh
+    # Volontairement sans `initial:` : ce champ réimposerait 8 kWh à chaque
+    # redémarrage de Home Assistant et effacerait silencieusement le réglage
+    # d'un utilisateur à plusieurs packs. La valeur par défaut est posée une
+    # seule fois, à la première installation, par l'automatisation plus bas.
     mode: box
     unit_of_measurement: kWh
     icon: mdi:battery
+
+automation:
+  # 8 kWh = un pack de type 70. On ne pose cette valeur que si le réglage n'a
+  # jamais été renseigné : une installation neuve fonctionne du premier coup,
+  # et une mise à jour ne touche pas à la capacité déjà saisie.
+  - id: zendure_solarflow4000mix_capacite_defaut
+    alias: Zendure SolarFlow4000Mix – capacité par défaut à la 1re installation
+    mode: single
+    triggers:
+      - trigger: homeassistant
+        event: start
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ states('input_number.zendure_solarflow4000mix_capacite')
+             in ['unknown', 'unavailable', 'none', ''] }}
+    actions:
+      - delay: 10
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_capacite}
+        data: {value: 8}
 
 template:
   - sensor:
