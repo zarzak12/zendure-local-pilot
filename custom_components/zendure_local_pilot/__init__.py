@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from .const import CONF_MIGRER, DOMAIN
 from .coordinator import CoordinateurZendure
 from .migration import liberer_anciennes_entites, verifier_migration
+from .services import enregistrer_services, retirer_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinateur.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinateur
+    enregistrer_services(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATEFORMES)
 
     entry.async_on_unload(entry.add_update_listener(_recharger))
@@ -56,6 +58,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     decharge = await hass.config_entries.async_unload_platforms(entry, PLATEFORMES)
     if decharge:
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        retirer_services(hass)
     return decharge
 
 

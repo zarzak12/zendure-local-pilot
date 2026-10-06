@@ -1,0 +1,62 @@
+set_power:
+  fields:
+    power:
+      required: true
+      example: 500
+      selector:
+        number:
+          min: -4000
+          max: 4000
+          step: 10
+          unit_of_measurement: W
+    entry_id:
+      selector:
+        text:
+
+set_limits:
+  fields:
+    decharge_max:
+      selector:
+        number: {min: 0, max: 4000, step: 100, unit_of_measurement: W}
+    charge_max:
+      selector:
+        number: {min: 0, max: 4000, step: 100, unit_of_measurement: W}
+    entry_id:
+      selector:
+        text:
+
+set_soc:
+  fields:
+    min_soc:
+      required: true
+      selector:
+        number: {min: 0, max: 50, step: 1, unit_of_measurement: "%"}
+    max_soc:
+      required: true
+      selector:
+        number: {min: 70, max: 100, step: 1, unit_of_measurement: "%"}
+    entry_id:
+      selector:
+        text:
+
+write_properties:
+  fields:
+    properties:
+      required: true
+      example: '{"lampSwitch": 0}'
+      selector:
+        object:
+    entry_id:
+      selector:
+        text:
+
+redeploy_script:
+  fields:
+    chemin:
+      required: true
+      example: /config/www/zendure_solarflow.js
+      selector:
+        text:
+    entry_id:
+      selector:
+        text:

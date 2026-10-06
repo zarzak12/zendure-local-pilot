@@ -80,5 +80,85 @@
         }
       }
     }
+  },
+  "services": {
+    "set_power": {
+      "name": "Power setpoint",
+      "description": "Forces a power setpoint. Positive discharges to the house, negative charges from the grid, zero idles. The value is clamped to the limits the battery reports. Volatile write: if the Shelly regulation is running, it takes over on the next cycle.",
+      "fields": {
+        "power": {
+          "name": "Power",
+          "description": "Power in watts."
+        },
+        "entry_id": {
+          "name": "Device",
+          "description": "Only needed when several batteries are configured."
+        }
+      }
+    },
+    "set_limits": {
+      "name": "Inverter limits",
+      "description": "Writes the discharge and charge limits. Stored in flash memory: do not call this in a loop.",
+      "fields": {
+        "decharge_max": {
+          "name": "Maximum discharge",
+          "description": "Discharge limit, in watts."
+        },
+        "charge_max": {
+          "name": "Maximum charge",
+          "description": "Charge limit, in watts."
+        },
+        "entry_id": {
+          "name": "Device",
+          "description": "Only needed when several batteries are configured."
+        }
+      }
+    },
+    "set_soc": {
+      "name": "Charge limits",
+      "description": "Writes the SOC limits. The firmware scale (percent or per-mille) is detected automatically. Stored in flash memory.",
+      "fields": {
+        "min_soc": {
+          "name": "Minimum SOC",
+          "description": "Level below which the battery stops discharging."
+        },
+        "max_soc": {
+          "name": "Maximum SOC",
+          "description": "Level above which the battery stops charging."
+        },
+        "entry_id": {
+          "name": "Device",
+          "description": "Only needed when several batteries are configured."
+        }
+      }
+    },
+    "write_properties": {
+      "name": "Write properties",
+      "description": "Sends raw properties to the battery, with no interpretation. An escape hatch for zenSDK properties this integration does not expose yet. Handle with care.",
+      "fields": {
+        "properties": {
+          "name": "Properties",
+          "description": "A dictionary of zenSDK properties."
+        },
+        "entry_id": {
+          "name": "Device",
+          "description": "Only needed when several batteries are configured."
+        }
+      }
+    },
+    "redeploy_script": {
+      "name": "Redeploy the Shelly script",
+      "description": "Rewrites the regulation script from a local file, in chunks, then checks the size read back. The Shelly web editor silently truncates large scripts; this service does not.",
+      "fields": {
+        "chemin": {
+          "name": "File path",
+          "description": "Path to the script, inside a directory allowed by allowlist_external_dirs."
+        },
+        "entry_id": {
+          "name": "Device",
+          "description": "Only needed when several batteries are configured."
+        }
+      }
+    }
   }
 }

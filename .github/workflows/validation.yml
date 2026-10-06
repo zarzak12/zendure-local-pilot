@@ -1,0 +1,51 @@
+name: Validation
+
+# L'intégration ne peut pas être testée ici contre un vrai Shelly ni une vraie
+# batterie. Ce qui est vérifiable l'est donc systématiquement : la conformité
+# aux règles de Home Assistant et de HACS, et les bancs d'essai de logique
+# pure, qui tournent sans Home Assistant.
+
+on:
+  push:
+    branches: [main, integration-hacs]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Les règles de hassfest et de HACS évoluent sans que le dépôt ne change :
+    # un passage hebdomadaire signale les ruptures avant les utilisateurs.
+    - cron: "0 6 * * 1"
+
+jobs:
+  hassfest:
+    name: Conformité Home Assistant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: Conformité HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  bancs:
+    name: Bancs d'essai
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Compilation
+        run: python -m compileall -q custom_components tests
+      - name: Logique de calcul
+        run: python tests/test_calculs.py
+      - name: Capteurs et contrôles
+        run: python tests/test_capteurs.py
+      - name: Cohérence des services
+        run: python tests/test_services.py

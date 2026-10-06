@@ -80,5 +80,85 @@
         }
       }
     }
+  },
+  "services": {
+    "set_power": {
+      "name": "Consigne de puissance",
+      "description": "Impose une puissance ? la batterie. Positif = d?charge vers la maison, n?gatif = charge depuis le r?seau, 0 = veille. La valeur est born?e par les plafonds que la batterie annonce. ?criture volatile : si la r?gulation du Shelly tourne, elle reprendra la main au cycle suivant.",
+      "fields": {
+        "power": {
+          "name": "Puissance",
+          "description": "Puissance en watts."
+        },
+        "entry_id": {
+          "name": "Installation",
+          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+        }
+      }
+    },
+    "set_limits": {
+      "name": "Plafonds de l'onduleur",
+      "description": "?crit les plafonds de d?charge et de charge. R?glage enregistr? en m?moire flash : ? ne pas appeler dans une boucle.",
+      "fields": {
+        "decharge_max": {
+          "name": "D?charge maximale",
+          "description": "Plafond de d?charge, en watts."
+        },
+        "charge_max": {
+          "name": "Charge maximale",
+          "description": "Plafond de charge, en watts."
+        },
+        "entry_id": {
+          "name": "Installation",
+          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+        }
+      }
+    },
+    "set_soc": {
+      "name": "Bornes de charge",
+      "description": "?crit les bornes SOC. L'?chelle du firmware (pourcentages ou pour-mille) est d?tect?e automatiquement. R?glage enregistr? en m?moire flash.",
+      "fields": {
+        "min_soc": {
+          "name": "SOC minimum",
+          "description": "Niveau sous lequel la batterie cesse de se d?charger."
+        },
+        "max_soc": {
+          "name": "SOC maximum",
+          "description": "Niveau au-del? duquel la batterie cesse de se charger."
+        },
+        "entry_id": {
+          "name": "Installation",
+          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+        }
+      }
+    },
+    "write_properties": {
+      "name": "?crire des propri?t?s",
+      "description": "Envoie des propri?t?s brutes ? la batterie, sans interpr?tation. Porte de sortie pour les propri?t?s zenSDK que l'int?gration n'expose pas encore. ? manier avec prudence.",
+      "fields": {
+        "properties": {
+          "name": "Propri?t?s",
+          "description": "Dictionnaire de propri?t?s zenSDK."
+        },
+        "entry_id": {
+          "name": "Installation",
+          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+        }
+      }
+    },
+    "redeploy_script": {
+      "name": "Red?ployer le script du Shelly",
+      "description": "R??crit le script de r?gulation ? partir d'un fichier local, par morceaux, puis v?rifie la taille relue. L'?diteur web du Shelly tronque silencieusement les scripts volumineux ; ce service ne le fait pas.",
+      "fields": {
+        "chemin": {
+          "name": "Chemin du fichier",
+          "description": "Chemin du script, dans un dossier autoris? par allowlist_external_dirs."
+        },
+        "entry_id": {
+          "name": "Installation",
+          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+        }
+      }
+    }
   }
 }
