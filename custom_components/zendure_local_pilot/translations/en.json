@@ -42,5 +42,43 @@
       "title": "The YAML packages are still loaded",
       "description": "{nombre} entities had to fall back to an identifier ending in _2, because the YAML packages still own the original ones. Your history and dashboards point at the old entities, which no longer update. Remove the zendure_solarflow4000mix*.yaml files from your packages folder, restart Home Assistant, then reload this integration."
     }
+  },
+  "entity": {
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "arret": "Off",
+          "autoconso": "Self-consumption",
+          "charge": "Forced charge",
+          "decharge": "Forced discharge",
+          "manuel": "Manual"
+        }
+      },
+      "injection_pv": {
+        "name": "PV export",
+        "state": {
+          "auto": "Auto",
+          "autorisee": "Allowed",
+          "interdite": "Blocked"
+        }
+      },
+      "mode_secours": {
+        "name": "Backup mode",
+        "state": {
+          "standard": "Standard",
+          "economique": "Economy",
+          "arret": "Off"
+        }
+      },
+      "canal_em": {
+        "name": "Grid clamp read",
+        "state": {
+          "0": "Clamp 1 (em1:0)",
+          "1": "Clamp 2 (em1:1)",
+          "2": "Clamp 3 (em1:2)"
+        }
+      }
+    }
   }
 }

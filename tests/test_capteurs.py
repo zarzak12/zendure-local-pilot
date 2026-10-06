@@ -73,7 +73,7 @@ def _prepare_doublures():
             UnitOfElectricCurrent=_Enum(), UnitOfElectricPotential=_Enum(),
             UnitOfEnergy=_Enum(), UnitOfPower=_Enum(),
             UnitOfTemperature=_Enum(), UnitOfTime=_Enum(),
-            Platform=_Enum())
+            EntityCategory=_Enum(), Platform=_Enum())
     helpers = _module("homeassistant.helpers")
     helpers.__path__ = []
     _module("homeassistant.helpers.aiohttp_client",
@@ -90,6 +90,36 @@ def _prepare_doublures():
     _module("homeassistant.components.sensor",
             SensorDeviceClass=_Enum(), SensorStateClass=_Enum(),
             SensorEntity=object, SensorEntityDescription=_EntityDescription)
+
+    @dataclasses.dataclass(frozen=True, kw_only=True)
+    class _NumberDescription(_EntityDescription):
+        native_min_value: float = 0
+        native_max_value: float = 100
+        native_step: float = 1
+        mode: str | None = None
+        entity_registry_enabled_default: bool = True
+        entity_category: str | None = None
+
+    @dataclasses.dataclass(frozen=True, kw_only=True)
+    class _SelectDescription(_EntityDescription):
+        options: list | None = None
+        translation_key: str | None = None
+        entity_category: str | None = None
+
+    @dataclasses.dataclass(frozen=True, kw_only=True)
+    class _BinaryDescription(_EntityDescription):
+        entity_category: str | None = None
+
+    _module("homeassistant.components.number",
+            NumberDeviceClass=_Enum(), NumberMode=_Enum(),
+            NumberEntity=object, NumberEntityDescription=_NumberDescription)
+    _module("homeassistant.components.select",
+            SelectEntity=object, SelectEntityDescription=_SelectDescription)
+    _module("homeassistant.components.switch",
+            SwitchDeviceClass=_Enum(), SwitchEntity=object)
+    _module("homeassistant.components.binary_sensor",
+            BinarySensorDeviceClass=_Enum(), BinarySensorEntity=object,
+            BinarySensorEntityDescription=_BinaryDescription)
 
 
 _prepare_doublures()
@@ -112,7 +142,11 @@ def _charge(nom: str):
 for _nom in ("const", "calculs", "zendure", "shelly", "coordinator", "entity"):
     _charge(_nom)
 capteurs = _charge("sensor")
+nombres = _charge("number")
+choix = _charge("select")
+binaires = _charge("binary_sensor")
 coordinator = sys.modules["zlp.coordinator"]
+const = sys.modules["zlp.const"]
 
 
 # --------------------------------------------------------------------------
@@ -252,6 +286,190 @@ def test_pas_de_cle_dupliquee():
     cles = [d.key for d in _toutes_descriptions()]
     doublons = {c for c in cles if cles.count(c) > 1}
     assert not doublons, f"identifiants en double : {doublons}"
+
+
+# --------------------------------------------------------------------------
+# Contrôles : ils ECRIVENT dans la batterie, une erreur y coûte plus cher
+# --------------------------------------------------------------------------
+class _FauxCoordinateur:
+    """Enregistre les écritures au lieu de les envoyer."""
+
+    def __init__(self, donnees):
+        self.data = donnees
+        self.ecritures = []
+
+    async def ecrire_batterie(self, proprietes):
+        self.ecritures.append(("batterie", proprietes))
+
+    async def ecrire_batterie_persistant(self, proprietes):
+        self.ecritures.append(("persistant", proprietes))
+
+    async def ecrire_composant_virtuel(self, composant, valeur):
+        self.ecritures.append(("vc", composant, valeur))
+
+    async def ecrire_kvs(self, cle, valeur):
+        self.ecritures.append(("kvs", cle, valeur))
+
+
+def _lancer(coroutine):
+    import asyncio
+    return asyncio.run(coroutine)
+
+
+def _controles():
+    return [*nombres.NOMBRES_BATTERIE, *nombres.NOMBRES_SHELLY,
+            *nombres._nombres_kvs()]
+
+
+def _controle(cle):
+    for d in _controles():
+        if d.key == cle:
+            return d
+    raise AssertionError(f"curseur absent : {cle}")
+
+
+def test_lecture_des_curseurs():
+    d = _donnees(RAPPORT_REEL)
+    # minSoc 100 et socSet 1000 sont en pour-mille : les curseurs doivent
+    # afficher 10 % et 100 %, et non 100 % et 1000 %.
+    assert _controle("soc_min_consigne").valeur(d) == 10
+    assert _controle("soc_max_consigne").valeur(d) == 100
+    assert _controle("plafond_decharge_consigne").valeur(d) == 3000
+
+
+def test_ecriture_des_bornes_soc_respecte_l_echelle():
+    coord = _FauxCoordinateur(_donnees(RAPPORT_REEL))
+    _lancer(_controle("soc_min_consigne").ecrire(coord, 20))
+    _lancer(_controle("soc_max_consigne").ecrire(coord, 90))
+    assert coord.ecritures == [
+        ("persistant", {"minSoc": 200}),
+        ("persistant", {"socSet": 900}),
+    ], coord.ecritures
+
+    # Firmware en pourcentages bruts (socSet <= 100) : on ne doit PAS
+    # multiplier, sous peine d'envoyer une consigne de 900 %.
+    brut = dict(RAPPORT_REEL)
+    brut["properties"] = {**RAPPORT_REEL["properties"], "socSet": 100, "minSoc": 10}
+    coord = _FauxCoordinateur(_donnees(brut))
+    _lancer(_controle("soc_max_consigne").ecrire(coord, 90))
+    assert coord.ecritures == [("persistant", {"socSet": 90})]
+
+
+def test_bornes_des_curseurs_suivent_la_batterie():
+    d = _donnees(RAPPORT_REEL)
+    assert _controle("decharge_max").bornes(d) == (0, 3000)
+    assert _controle("charge_max").bornes(d) == (0, 3000)
+    # Batterie encore muette : on se replie, sans inventer une limite basse
+    # qui briderait un 4000.
+    vide = _donnees({"properties": {}, "packData": []})
+    assert _controle("decharge_max").bornes(vide) == (0, const.LIMITE_REPLI)
+
+
+def test_reglages_kvs_restent_types():
+    coord = _FauxCoordinateur(_donnees(RAPPORT_REEL))
+    # period est un entier : l'écrire en flottant casserait les comparaisons
+    # du script, qui tourne en mJS.
+    _lancer(_controle("period").ecrire(coord, 2000.0))
+    _lancer(_controle("gain").ecrire(coord, 0.85))
+    assert coord.ecritures == [
+        ("kvs", "zendure_period", 2000),
+        ("kvs", "zendure_gain", 0.85),
+    ], coord.ecritures
+    assert isinstance(coord.ecritures[0][2], int)
+
+
+def test_listes_de_choix():
+    d = _donnees(RAPPORT_REEL)
+    par_cle = {c.key: c for c in choix.CHOIX}
+    # gridReverse 2 = injection interdite
+    assert par_cle["injection_pv_consigne"].valeur(d) == "interdite"
+    coord = _FauxCoordinateur(d)
+    _lancer(par_cle["injection_pv_consigne"].ecrire(coord, "autorisee"))
+    _lancer(par_cle["mode_secours_consigne"].ecrire(coord, "arret"))
+    assert coord.ecritures == [
+        ("persistant", {"gridReverse": 1}),
+        ("persistant", {"gridOffMode": 2}),
+    ], coord.ecritures
+
+
+def test_choix_sans_valeur_connue():
+    # gridOffMode absent du rapport : afficher « standard » laisserait croire
+    # à un réglage qui n'a pas été lu.
+    d = _donnees(RAPPORT_REEL)
+    par_cle = {c.key: c for c in choix.CHOIX}
+    assert par_cle["mode_secours_consigne"].valeur(d) is None
+    assert par_cle["mode"].valeur(d) is None
+
+
+def test_mode_lu_depuis_le_shelly():
+    d = _donnees(RAPPORT_REEL)
+    d.shelly = {"enum:200": {"id": 200, "value": "autoconso"}}
+    d.kvs = {"zendure_em": 2}
+    par_cle = {c.key: c for c in choix.CHOIX}
+    assert par_cle["mode"].valeur(d) == "autoconso"
+    assert par_cle["canal_em"].valeur(d) == "2"
+    # Un mode inconnu du script ne doit pas être affiché comme valide
+    d.shelly = {"enum:200": {"id": 200, "value": "turbo"}}
+    assert par_cle["mode"].valeur(d) is None
+
+
+def test_etats_binaires():
+    d = _donnees(RAPPORT_REEL)
+    d.shelly = {"boolean:200": {"value": True}}
+    d.script = {"running": True}
+    par_cle = {b.key: b for b in binaires.BINAIRES}
+    assert par_cle["en_veille"].valeur(d) is True
+    assert par_cle["script_shelly"].valeur(d) is True
+    assert par_cle["batterie_joignable"].valeur(d) is True
+    assert par_cle["defaut"].valeur(d) is False
+    # faultLevel non nul doit lever l'alerte même si is_error vaut 0
+    alerte = dict(RAPPORT_REEL)
+    alerte["properties"] = {**RAPPORT_REEL["properties"], "faultLevel": 3}
+    assert par_cle["defaut"].valeur(_donnees(alerte)) is True
+
+
+def test_toutes_les_options_sont_traduites():
+    import json
+    for langue in ("fr", "en"):
+        chemin = os.path.join(DOSSIER, "translations", f"{langue}.json")
+        with open(chemin, encoding="utf-8") as f:
+            traductions = json.load(f)
+        selects = traductions.get("entity", {}).get("select", {})
+        for description in choix.CHOIX:
+            cle = description.translation_key
+            assert cle in selects, f"{langue} : traduction absente pour {cle}"
+            etats = selects[cle].get("state", {})
+            manquants = set(description.options or []) - set(etats)
+            assert not manquants, f"{langue}/{cle} : options non traduites {manquants}"
+
+
+def test_ecriture_persistante_retablit_smartmode():
+    """Sans rétablissement de smartMode, la batterie refuserait ensuite les
+    consignes rapides de la régulation : la batterie resterait figée."""
+    import asyncio
+
+    class _Faux:
+        def __init__(self):
+            self.ecritures = []
+
+        async def ecrire_batterie(self, proprietes):
+            self.ecritures.append(proprietes)
+
+    faux = _Faux()
+    veilles = []
+    coordinator.asyncio = types.SimpleNamespace(
+        sleep=lambda d: veilles.append(d) or asyncio.sleep(0))
+    try:
+        asyncio.run(coordinator.CoordinateurZendure.ecrire_batterie_persistant(
+            faux, {"socSet": 900}))
+    finally:
+        coordinator.asyncio = asyncio
+
+    assert faux.ecritures == [
+        {"smartMode": 0, "socSet": 900},
+        {"smartMode": 1},
+    ], faux.ecritures
+    assert veilles == [2], "la batterie a besoin d'un délai avant le rétablissement"
 
 
 if __name__ == "__main__":

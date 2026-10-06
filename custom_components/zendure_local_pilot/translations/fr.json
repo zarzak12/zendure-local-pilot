@@ -42,5 +42,43 @@
       "title": "Les packages YAML sont encore chargés",
       "description": "{nombre} entités ont dû se rabattre sur un identifiant terminé par _2, parce que les packages YAML détiennent toujours les identifiants d'origine. Ton historique et tes dashboards pointent donc vers les anciennes entités, qui ne se mettent plus à jour. Retire les fichiers zendure_solarflow4000mix*.yaml de ton dossier packages, redémarre Home Assistant, puis recharge cette intégration."
     }
+  },
+  "entity": {
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "arret": "Arr?t",
+          "autoconso": "Autoconsommation",
+          "charge": "Charge forc?e",
+          "decharge": "D?charge forc?e",
+          "manuel": "Manuel"
+        }
+      },
+      "injection_pv": {
+        "name": "Injection PV",
+        "state": {
+          "auto": "Auto",
+          "autorisee": "Autoris?e",
+          "interdite": "Interdite"
+        }
+      },
+      "mode_secours": {
+        "name": "Mode secours",
+        "state": {
+          "standard": "Standard",
+          "economique": "?conomique",
+          "arret": "Arr?t"
+        }
+      },
+      "canal_em": {
+        "name": "Pince r?seau lue",
+        "state": {
+          "0": "Pince 1 (em1:0)",
+          "1": "Pince 2 (em1:1)",
+          "2": "Pince 3 (em1:2)"
+        }
+      }
+    }
   }
 }

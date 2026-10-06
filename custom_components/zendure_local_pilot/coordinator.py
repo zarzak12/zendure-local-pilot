@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -52,6 +53,13 @@ class Donnees:
     def script_actif(self) -> bool:
         return bool((self.script or {}).get("running"))
 
+    def vc(self, composant: str) -> Any:
+        """Valeur d'un composant virtuel du Shelly, p. ex. « number:200 »."""
+        bloc = self.shelly.get(composant)
+        if isinstance(bloc, dict):
+            return bloc.get("value")
+        return None
+
 
 class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
     """Interroge le Shelly puis la batterie, à chaque cycle."""
@@ -68,6 +76,11 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         self.shelly = ClientShelly(session, entree.data[CONF_SHELLY_HOST])
         self.zendure = ClientZendure(session, "")
         self._id_script: int | None = None
+
+    @property
+    def id_script(self) -> int | None:
+        """Identifiant du script de régulation sur le Shelly, s'il est connu."""
+        return self._id_script
 
     @property
     def canal_em(self) -> int:
@@ -131,3 +144,25 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
             raise ErreurZendure("numéro de série inconnu : écriture refusée")
         await self.zendure.ecrire(self.data.sn, proprietes)
         await self.async_request_refresh()
+
+    async def ecrire_batterie_persistant(self, proprietes: dict[str, Any]) -> None:
+        """Écrit un réglage qui doit survivre à une coupure.
+
+        La batterie n'enregistre en mémoire flash que lorsque smartMode vaut 0.
+        On l'y place, on écrit, puis on rétablit smartMode à 1 : sans ce
+        rétablissement, la batterie cesserait d'accepter les consignes rapides
+        de la régulation. À réserver aux réglages rares (bornes SOC, plafonds) :
+        la flash a un nombre de cycles d'écriture limité.
+        """
+        await self.ecrire_batterie({"smartMode": 0, **proprietes})
+        await asyncio.sleep(2)
+        await self.ecrire_batterie({"smartMode": 1})
+
+    async def ecrire_composant_virtuel(self, composant: str, valeur: Any) -> None:
+        await self.shelly.vc_ecrire(composant, valeur)
+        await self.async_request_refresh()
+
+    async def ecrire_kvs(self, cle: str, valeur: Any) -> None:
+        await self.shelly.kvs_ecrire(cle, valeur)
+        await self.async_request_refresh()
+

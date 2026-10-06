@@ -20,7 +20,13 @@ from .migration import liberer_anciennes_entites, verifier_migration
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATEFORMES: list[Platform] = [Platform.SENSOR]
+PLATEFORMES: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
