@@ -1,0 +1,332 @@
+"""Capteurs issus du rapport de la batterie."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+    UnitOfTime,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .calculs import (
+    capacite_pack,
+    capacite_totale,
+    echelle_soc,
+    nom_modele,
+    puissance_batterie_nette,
+)
+from .const import CONF_NB_PACKS, DEFAUT_NB_PACKS, DOMAIN
+from .coordinator import CoordinateurZendure, Donnees
+from .entity import EntiteZendure
+
+MESURE = SensorStateClass.MEASUREMENT
+
+
+def _i(source: dict[str, Any], cle: str, defaut: int = 0) -> int:
+    """Lecture entière tolérante : un champ absent n'est pas une erreur.
+
+    Les modèles n'exposent pas tous les mêmes champs — le SolarFlow 2400 AC
+    n'a pas d'entrée photovoltaïque, les propriétés hors-réseau sont réservées
+    à certains modèles. Mieux vaut une valeur neutre qu'une entité en erreur.
+    """
+    try:
+        return int(source.get(cle, defaut) or 0)
+    except (TypeError, ValueError):
+        return defaut
+
+
+def _dixiemes_kelvin(valeur: int) -> float:
+    """Les températures arrivent en dixièmes de kelvin (2931 = 20,0 °C)."""
+    return round((valeur - 2731) / 10, 1)
+
+
+@dataclass(frozen=True, kw_only=True)
+class DescriptionCapteur(SensorEntityDescription):
+    """Description enrichie d'une fonction de lecture."""
+
+    valeur: Callable[[Donnees], Any]
+    present: Callable[[Donnees], bool] = lambda d: True
+
+
+def _direct(suffixe: str, nom: str, propriete: str, **kwargs) -> DescriptionCapteur:
+    return DescriptionCapteur(
+        key=suffixe,
+        name=nom,
+        valeur=lambda d, p=propriete: _i(d.proprietes, p),
+        **kwargs,
+    )
+
+
+_W = {"native_unit_of_measurement": UnitOfPower.WATT,
+      "device_class": SensorDeviceClass.POWER, "state_class": MESURE}
+
+CAPTEURS: tuple[DescriptionCapteur, ...] = (
+    DescriptionCapteur(
+        key="modele", name="modèle", icon="mdi:tag-outline",
+        valeur=lambda d: nom_modele(d.produit),
+    ),
+    # ---- État global ----
+    _direct("soc", "SOC", "electricLevel", native_unit_of_measurement=PERCENTAGE,
+            device_class=SensorDeviceClass.BATTERY, state_class=MESURE),
+    DescriptionCapteur(
+        key="tension_batterie", name="tension batterie",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE, state_class=MESURE,
+        valeur=lambda d: round(_i(d.proprietes, "BatVolt") / 100, 2),
+    ),
+    DescriptionCapteur(
+        key="autonomie_restante", name="autonomie restante",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        valeur=lambda d: _i(d.proprietes, "remainOutTime"),
+        # L'appareil renvoie une autonomie farfelue quand il ne décharge pas.
+        present=lambda d: _i(d.proprietes, "packInputPower") > 20,
+    ),
+    DescriptionCapteur(
+        key="temperature_boitier", name="température boîtier",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE, state_class=MESURE,
+        valeur=lambda d: _dixiemes_kelvin(_i(d.proprietes, "hyperTmp", 2931)),
+    ),
+    DescriptionCapteur(
+        key="wifi_rssi", name="RSSI Wi-Fi",
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH, state_class=MESURE,
+        # Une valeur positive ou nulle signale une liaison filaire : il n'y a
+        # alors pas de niveau radio à afficher.
+        valeur=lambda d: r if (r := _i(d.proprietes, "rssi")) < 0 else None,
+    ),
+    # ---- Photovoltaïque ----
+    _direct("pv", "PV", "solarInputPower", **_W),
+    _direct("pv_1", "PV 1", "solarPower1", **_W),
+    _direct("pv_2", "PV 2", "solarPower2", **_W),
+    # ---- Flux AC ----
+    _direct("sortie_maison", "sortie maison", "outputHomePower", **_W),
+    _direct("entree_reseau", "entrée réseau", "gridInputPower", **_W),
+    DescriptionCapteur(
+        key="sortie_secours", name="sortie secours", **_W,
+        valeur=lambda d: (_i(d.proprietes, "gridOffPower")
+                          + _i(d.proprietes, "gridOffPower2")),
+    ),
+    # ---- Flux batterie ----
+    _direct("charge_batterie", "charge batterie", "outputPackPower", **_W),
+    _direct("decharge_batterie", "décharge batterie", "packInputPower", **_W),
+    DescriptionCapteur(
+        key="puissance_batterie_nette", name="puissance batterie nette", **_W,
+        valeur=lambda d: puissance_batterie_nette(d.proprietes),
+    ),
+    # ---- Consignes et limites ----
+    _direct("limite_sortie", "limite sortie", "outputLimit", **_W),
+    _direct("limite_charge", "limite charge", "inputLimit", **_W),
+    _direct("plafond_onduleur", "plafond onduleur", "inverseMaxPower", **_W),
+    _direct("plafond_charge", "plafond charge", "chargeMaxLimit", **_W),
+    DescriptionCapteur(
+        key="soc_min", name="SOC minimum", native_unit_of_measurement=PERCENTAGE,
+        state_class=MESURE,
+        valeur=lambda d: round(
+            _i(d.proprietes, "minSoc") / echelle_soc(d.proprietes), 1),
+    ),
+    DescriptionCapteur(
+        key="soc_max", name="SOC maximum", native_unit_of_measurement=PERCENTAGE,
+        state_class=MESURE,
+        valeur=lambda d: round(
+            _i(d.proprietes, "socSet") / echelle_soc(d.proprietes), 1),
+    ),
+    # ---- Divers ----
+    _direct("nombre_de_packs", "nombre de packs", "packNum"),
+    DescriptionCapteur(
+        key="mode_ac", name="mode AC", icon="mdi:swap-vertical",
+        valeur=lambda d: {1: "Charge", 2: "Décharge"}.get(
+            _i(d.proprietes, "acMode"), "Inconnu"),
+    ),
+    DescriptionCapteur(
+        key="injection_pv", name="injection PV", icon="mdi:transmission-tower",
+        valeur=lambda d: {0: "Auto", 1: "Autorisée", 2: "Interdite"}.get(
+            _i(d.proprietes, "gridReverse", -1), "Inconnu"),
+    ),
+    # ---- Synthèse des packs ----
+    DescriptionCapteur(
+        key="ecart_cellules_max", name="écart cellules max",
+        native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
+        state_class=MESURE,
+        valeur=lambda d: (max(_i(p, "maxVol") for p in d.packs)
+                          - min(_i(p, "minVol") for p in d.packs)) * 10,
+        present=lambda d: bool(d.packs),
+    ),
+    DescriptionCapteur(
+        key="temperature_pack_max", name="température pack max",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE, state_class=MESURE,
+        valeur=lambda d: _dixiemes_kelvin(max(_i(p, "maxTemp", 2931) for p in d.packs)),
+        present=lambda d: bool(d.packs),
+    ),
+    DescriptionCapteur(
+        key="ecart_soc_packs", name="écart SOC packs",
+        native_unit_of_measurement=PERCENTAGE, state_class=MESURE,
+        valeur=lambda d: (max(_i(p, "socLevel") for p in d.packs)
+                          - min(_i(p, "socLevel") for p in d.packs)),
+        present=lambda d: bool(d.packs),
+    ),
+    DescriptionCapteur(
+        key="capacite_nominale_totale", name="capacité nominale totale",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
+        valeur=lambda d: capacite_totale(d.packs),
+        present=lambda d: bool(d.packs),
+    ),
+    # Énergie exploitable entre les bornes SOC. La capacité n'est plus saisie
+    # à la main : elle découle des packs réellement présents.
+    DescriptionCapteur(
+        key="energie_disponible", name="énergie disponible",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
+        valeur=lambda d: round(
+            max(_i(d.proprietes, "electricLevel")
+                - _i(d.proprietes, "minSoc") / echelle_soc(d.proprietes), 0)
+            * capacite_totale(d.packs) / 100, 2),
+        present=lambda d: bool(d.packs),
+    ),
+    DescriptionCapteur(
+        key="energie_requise", name="énergie requise",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
+        valeur=lambda d: round(
+            max(_i(d.proprietes, "socSet") / echelle_soc(d.proprietes)
+                - _i(d.proprietes, "electricLevel"), 0)
+            * capacite_totale(d.packs) / 100, 2),
+        present=lambda d: bool(d.packs),
+    ),
+)
+
+
+def _capteurs_pack(n: int) -> tuple[DescriptionCapteur, ...]:
+    """Capteurs du n-ième pack (n commence à 1)."""
+    i = n - 1
+
+    def pack(d: Donnees) -> dict[str, Any]:
+        return d.packs[i] if len(d.packs) > i else {}
+
+    def courant(d: Donnees) -> float:
+        # Le champ est un entier 16 bits non signé : 65534 vaut −0,2 A.
+        # Sans cette conversion, une charge afficherait 6553,4 A.
+        c = _i(pack(d), "batcur")
+        return round(((c - 65536) if c > 32767 else c) / 10, 1)
+
+    def tension(d: Donnees) -> float:
+        return round(_i(pack(d), "totalVol") / 100, 2)
+
+    present = lambda d: len(d.packs) > i  # noqa: E731
+
+    return (
+        DescriptionCapteur(
+            key=f"pack_{n}_soc", name=f"pack {n} SOC",
+            native_unit_of_measurement=PERCENTAGE,
+            device_class=SensorDeviceClass.BATTERY, state_class=MESURE,
+            valeur=lambda d: _i(pack(d), "socLevel"), present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_puissance", name=f"pack {n} puissance", **_W,
+            valeur=lambda d: _i(pack(d), "power"), present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_tension", name=f"pack {n} tension",
+            native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+            device_class=SensorDeviceClass.VOLTAGE, state_class=MESURE,
+            valeur=tension, present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_courant", name=f"pack {n} courant",
+            native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+            device_class=SensorDeviceClass.CURRENT, state_class=MESURE,
+            valeur=courant, present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_temperature", name=f"pack {n} température",
+            native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+            device_class=SensorDeviceClass.TEMPERATURE, state_class=MESURE,
+            valeur=lambda d: _dixiemes_kelvin(_i(pack(d), "maxTemp", 2931)),
+            present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_ecart_cellules", name=f"pack {n} écart cellules",
+            native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
+            state_class=MESURE,
+            valeur=lambda d: (_i(pack(d), "maxVol") - _i(pack(d), "minVol")) * 10,
+            present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_puissance_dc", name=f"pack {n} puissance DC", **_W,
+            valeur=lambda d: round(tension(d) * courant(d), 1), present=present,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_capacite_nominale", name=f"pack {n} capacité nominale",
+            native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
+            valeur=lambda d: capacite_pack(pack(d).get("sn"), pack(d).get("packType")),
+            present=present,
+        ),
+    )
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    coordinateur: CoordinateurZendure = hass.data[DOMAIN][entry.entry_id]
+    nb_packs = entry.options.get(
+        CONF_NB_PACKS, entry.data.get(CONF_NB_PACKS, DEFAUT_NB_PACKS))
+
+    descriptions = list(CAPTEURS)
+    for n in range(1, int(nb_packs) + 1):
+        descriptions.extend(_capteurs_pack(n))
+
+    async_add_entities(CapteurZendure(coordinateur, d) for d in descriptions)
+
+
+class CapteurZendure(EntiteZendure, SensorEntity):
+    """Capteur dont la valeur est calculée à partir du rapport."""
+
+    entity_description: DescriptionCapteur
+
+    def __init__(self, coordinateur: CoordinateurZendure,
+                 description: DescriptionCapteur) -> None:
+        super().__init__(coordinateur, description.key, "sensor")
+        self.entity_description = description
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        try:
+            return self.entity_description.present(self.coordinator.data)
+        except (TypeError, ValueError, IndexError, KeyError):
+            return False
+
+    @property
+    def native_value(self) -> Any:
+        donnees = self.coordinator.data
+        if donnees is None:
+            return None
+        try:
+            return self.entity_description.valeur(donnees)
+        except (TypeError, ValueError, IndexError, KeyError, ZeroDivisionError):
+            # Un rapport incomplet ne doit pas faire remonter d'exception
+            # jusqu'au journal à chaque cycle de sondage.
+            return None

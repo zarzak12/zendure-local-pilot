@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zendure Local Pilot",
+        "description": "Saisis l'adresse du Shelly Pro 3EM qui héberge le script de régulation. La batterie, elle, est découverte toute seule par le script.",
+        "data": {
+          "shelly_host": "Adresse IP du Shelly",
+          "em_canal": "Canal de la pince réseau (em1:0, 1 ou 2)",
+          "nb_packs": "Nombre de packs batterie",
+          "migrer": "Reprendre les entités de la version YAML"
+        },
+        "data_description": {
+          "em_canal": "Le canal sur lequel ta pince réseau est câblée. En lire un autre ferait réguler sur une mesure qui ne veut rien dire.",
+          "migrer": "À laisser coché si tu viens des packages YAML : c'est ce qui préserve ton historique et tes statistiques. Retire les packages YAML avant."
+        }
+      }
+    },
+    "error": {
+      "injoignable": "Aucune réponse à cette adresse. Vérifie l'IP et que le Shelly est alimenté.",
+      "pas_un_shelly": "Cet appareil a répondu, mais ce n'est pas un Shelly.",
+      "script_absent": "Aucun script de régulation Zendure trouvé sur ce Shelly. Installe-le d'abord, sans quoi il n'y a rien à superviser."
+    },
+    "abort": {
+      "already_configured": "Ce Shelly est déjà configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Réglages Zendure Local Pilot",
+        "data": {
+          "shelly_host": "Adresse IP du Shelly",
+          "em_canal": "Canal de la pince réseau (em1:0, 1 ou 2)",
+          "nb_packs": "Nombre de packs batterie"
+        }
+      }
+    }
+  },
+  "issues": {
+    "packages_yaml_encore_charges": {
+      "title": "Les packages YAML sont encore chargés",
+      "description": "{nombre} entités ont dû se rabattre sur un identifiant terminé par _2, parce que les packages YAML détiennent toujours les identifiants d'origine. Ton historique et tes dashboards pointent donc vers les anciennes entités, qui ne se mettent plus à jour. Retire les fichiers zendure_solarflow4000mix*.yaml de ton dossier packages, redémarre Home Assistant, puis recharge cette intégration."
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zendure Local Pilot",
+        "description": "Enter the address of the Shelly Pro 3EM that runs the regulation script. The battery itself is discovered automatically by the script.",
+        "data": {
+          "shelly_host": "Shelly IP address",
+          "em_canal": "Grid clamp channel (em1:0, 1 or 2)",
+          "nb_packs": "Number of battery packs",
+          "migrer": "Take over the entities from the YAML version"
+        },
+        "data_description": {
+          "em_canal": "The channel your grid clamp is wired to. Reading the wrong one makes the regulation chase a meaningless measurement.",
+          "migrer": "Keep this enabled when upgrading from the YAML packages: it preserves your history and statistics. Remove the YAML packages first."
+        }
+      }
+    },
+    "error": {
+      "injoignable": "No answer from this address. Check the IP and that the Shelly is powered.",
+      "pas_un_shelly": "This device answered, but it is not a Shelly.",
+      "script_absent": "No Zendure regulation script was found on this Shelly. Install it first, otherwise there is nothing to supervise."
+    },
+    "abort": {
+      "already_configured": "This Shelly is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zendure Local Pilot settings",
+        "data": {
+          "shelly_host": "Shelly IP address",
+          "em_canal": "Grid clamp channel (em1:0, 1 or 2)",
+          "nb_packs": "Number of battery packs"
+        }
+      }
+    }
+  },
+  "issues": {
+    "packages_yaml_encore_charges": {
+      "title": "The YAML packages are still loaded",
+      "description": "{nombre} entities had to fall back to an identifier ending in _2, because the YAML packages still own the original ones. Your history and dashboards point at the old entities, which no longer update. Remove the zendure_solarflow4000mix*.yaml files from your packages folder, restart Home Assistant, then reload this integration."
+    }
+  }
+}

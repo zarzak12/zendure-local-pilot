@@ -1,0 +1,12 @@
+{
+  "domain": "zendure_local_pilot",
+  "name": "Zendure Local Pilot",
+  "codeowners": ["@zarzak12"],
+  "config_flow": true,
+  "documentation": "https://github.com/zarzak12/zendure-local-pilot",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/zarzak12/zendure-local-pilot/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

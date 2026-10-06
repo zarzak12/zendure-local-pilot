@@ -10,6 +10,11 @@ dashboard/dashboard-perso.yaml
 *.local.yaml
 secrets.yaml
 
+# --- Python (intégration HACS) ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # --- Divers ---
 *.bak
 *.tmp
