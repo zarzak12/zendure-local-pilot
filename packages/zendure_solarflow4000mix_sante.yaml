@@ -138,7 +138,7 @@ template:
   - sensor:
       # ---- Puissance DC signée : + charge / - décharge ----
       # packData.power est une magnitude, le sens vient du signe du courant.
-      - name: Zendure pack 1 puissance DC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 puissance DC"
         unique_id: zendure_solarflow4000mix_pack_1_puissance_dc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_puissance_dc
         unit_of_measurement: W
@@ -151,7 +151,7 @@ template:
           {{ (states('sensor.zendure_solarflow4000mix_pack_1_tension') | float(0)
               * states('sensor.zendure_solarflow4000mix_pack_1_courant') | float(0)) | round(1) }}
 
-      - name: Zendure pack 2 puissance DC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 puissance DC"
         unique_id: zendure_solarflow4000mix_pack_2_puissance_dc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_puissance_dc
         unit_of_measurement: W
@@ -164,7 +164,7 @@ template:
           {{ (states('sensor.zendure_solarflow4000mix_pack_2_tension') | float(0)
               * states('sensor.zendure_solarflow4000mix_pack_2_courant') | float(0)) | round(1) }}
 
-      - name: Zendure pack 3 puissance DC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 puissance DC"
         unique_id: zendure_solarflow4000mix_pack_3_puissance_dc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_puissance_dc
         unit_of_measurement: W
@@ -177,7 +177,7 @@ template:
           {{ (states('sensor.zendure_solarflow4000mix_pack_3_tension') | float(0)
               * states('sensor.zendure_solarflow4000mix_pack_3_courant') | float(0)) | round(1) }}
 
-      - name: Zendure pack 4 puissance DC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 puissance DC"
         unique_id: zendure_solarflow4000mix_pack_4_puissance_dc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_puissance_dc
         unit_of_measurement: W
@@ -199,7 +199,7 @@ template:
       # communautaires lui prêtent 1,92 kWh.
       # packType ne sert qu'à départager les SN commençant par B, et de repli
       # quand le préfixe est inconnu.
-      - name: Zendure pack 1 capacite nominale
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 capacite nominale"
         unique_id: zendure_solarflow4000mix_pack_1_capacite_nominale
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_capacite_nominale
         unit_of_measurement: kWh
@@ -222,7 +222,7 @@ template:
                else 2.40 if p0 == 'J'
                else repli.get(t, 0) }}
 
-      - name: Zendure pack 2 capacite nominale
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 capacite nominale"
         unique_id: zendure_solarflow4000mix_pack_2_capacite_nominale
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_capacite_nominale
         unit_of_measurement: kWh
@@ -245,7 +245,7 @@ template:
                else 2.40 if p0 == 'J'
                else repli.get(t, 0) }}
 
-      - name: Zendure pack 3 capacite nominale
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 capacite nominale"
         unique_id: zendure_solarflow4000mix_pack_3_capacite_nominale
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_capacite_nominale
         unit_of_measurement: kWh
@@ -268,7 +268,7 @@ template:
                else 2.40 if p0 == 'J'
                else repli.get(t, 0) }}
 
-      - name: Zendure pack 4 capacite nominale
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 capacite nominale"
         unique_id: zendure_solarflow4000mix_pack_4_capacite_nominale
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_capacite_nominale
         unit_of_measurement: kWh
@@ -292,7 +292,7 @@ template:
                else repli.get(t, 0) }}
 
       # ---- État de santé estimé ----
-      - name: Zendure pack 1 sante
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 sante"
         unique_id: zendure_solarflow4000mix_pack_1_sante
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_sante
         unit_of_measurement: "%"
@@ -309,7 +309,7 @@ template:
           capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_1_capacite_estimee') | float(0) | round(0) }}"
           capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_1_capacite_nominale') | float(0) * 1000) | round(0) }}"
 
-      - name: Zendure pack 2 sante
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 sante"
         unique_id: zendure_solarflow4000mix_pack_2_sante
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_sante
         unit_of_measurement: "%"
@@ -326,7 +326,7 @@ template:
           capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_2_capacite_estimee') | float(0) | round(0) }}"
           capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_2_capacite_nominale') | float(0) * 1000) | round(0) }}"
 
-      - name: Zendure pack 3 sante
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 sante"
         unique_id: zendure_solarflow4000mix_pack_3_sante
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_sante
         unit_of_measurement: "%"
@@ -343,7 +343,7 @@ template:
           capacite_estimee_wh: "{{ states('input_number.zendure_solarflow4000mix_pack_3_capacite_estimee') | float(0) | round(0) }}"
           capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_3_capacite_nominale') | float(0) * 1000) | round(0) }}"
 
-      - name: Zendure pack 4 sante
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 sante"
         unique_id: zendure_solarflow4000mix_pack_4_sante
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_sante
         unit_of_measurement: "%"
@@ -361,7 +361,7 @@ template:
           capacite_nominale_wh: "{{ (states('sensor.zendure_solarflow4000mix_pack_4_capacite_nominale') | float(0) * 1000) | round(0) }}"
 
       # ---- Avancement de la mesure en cours (tous packs) ----
-      - name: Zendure mesure sante progression
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} mesure sante progression"
         unique_id: zendure_solarflow4000mix_mesure_sante_progression
         default_entity_id: sensor.zendure_solarflow4000mix_mesure_sante_progression
         unit_of_measurement: "%"
@@ -391,7 +391,7 @@ template:
           {{ ns.v | round(0) }}
 
       # ---- Synthèse tous packs ----
-      - name: Zendure sante minimale
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} sante minimale"
         unique_id: zendure_solarflow4000mix_sante_min
         default_entity_id: sensor.zendure_solarflow4000mix_sante_min
         unit_of_measurement: "%"
@@ -409,7 +409,7 @@ template:
             {{ [states('sensor.zendure_solarflow4000mix_pack_1_sante'), states('sensor.zendure_solarflow4000mix_pack_2_sante'), states('sensor.zendure_solarflow4000mix_pack_3_sante'), states('sensor.zendure_solarflow4000mix_pack_4_sante')]
                | select('is_number') | list | count }}
 
-      - name: Zendure capacite nominale totale
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} capacite nominale totale"
         unique_id: zendure_solarflow4000mix_capacite_nominale_totale
         default_entity_id: sensor.zendure_solarflow4000mix_capacite_nominale_totale
         unit_of_measurement: kWh

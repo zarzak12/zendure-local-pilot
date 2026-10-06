@@ -52,8 +52,36 @@ rest:
 # ---------------------------------------------------------------------
 template:
   - sensor:
+      # ---- Modèle, en version lisible ----
+      # Le capteur « raw » a pour état la chaîne brute annoncée par la
+      # batterie (solarFlow4000MixPro). Ce capteur l'habille pour l'affichage,
+      # et sert de préfixe au nom de toutes les autres entités : un possesseur
+      # de 2400 AC+ lit « Zendure SolarFlow 2400 AC+ SOC » sans rien régler.
+      # Les identifiants techniques, eux, ne bougent pas (default_entity_id).
+      - name: Zendure modele
+        unique_id: zendure_solarflow4000mix_modele
+        default_entity_id: sensor.zendure_solarflow4000mix_modele
+        icon: mdi:tag-outline
+        state: >-
+          {% set p = states('sensor.zendure_solarflow4000mix_raw') | string %}
+          {% set noms = {
+               'solarFlow4000MixPro': 'SolarFlow 4000 MIX PRO',
+               'solarFlow4000MixAC+': 'SolarFlow 4000 MIX AC+',
+               'solarFlow3000MixPro': 'SolarFlow 3000 MIX PRO',
+               'solarFlow3000MixAC+': 'SolarFlow 3000 MIX AC+',
+               'solarFlow2400AC':     'SolarFlow 2400 AC',
+               'solarFlow2400AC+':    'SolarFlow 2400 AC+',
+               'solarFlow2400Pro':    'SolarFlow 2400 Pro',
+               'solarFlow1600AC+':    'SolarFlow 1600 AC+',
+               'solarFlow800':        'SolarFlow 800',
+               'solarFlow800Plus':    'SolarFlow 800 Plus',
+               'solarFlow800Pro':     'SolarFlow 800 Pro'
+             } %}
+          {{ noms.get(p, 'SolarFlow' if p in ['unknown', 'unavailable', 'none', '']
+                         else p | regex_replace('^solarFlow', 'SolarFlow ')) }}
+
       # ---- État global ----
-      - name: Zendure SOC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} SOC"
         unique_id: zendure_solarflow4000mix_soc
         default_entity_id: sensor.zendure_solarflow4000mix_soc
         unit_of_measurement: "%"
@@ -62,7 +90,7 @@ template:
         availability: &zav "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties') is mapping }}"
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').electricLevel }}"
 
-      - name: Zendure tension batterie
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} tension batterie"
         unique_id: zendure_solarflow4000mix_tension_batterie
         default_entity_id: sensor.zendure_solarflow4000mix_tension_batterie
         unit_of_measurement: V
@@ -71,7 +99,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').BatVolt | int(0) / 100 }}"
 
-      - name: Zendure autonomie restante
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} autonomie restante"
         unique_id: zendure_solarflow4000mix_autonomie_restante
         default_entity_id: sensor.zendure_solarflow4000mix_autonomie_restante
         unit_of_measurement: min
@@ -81,7 +109,7 @@ template:
           {{ p is mapping and p.packInputPower | int(0) > 20 }}
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').remainOutTime }}"
 
-      - name: Zendure temperature boitier
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} temperature boitier"
         unique_id: zendure_solarflow4000mix_temperature_boitier
         default_entity_id: sensor.zendure_solarflow4000mix_temperature_boitier
         unit_of_measurement: "°C"
@@ -91,7 +119,7 @@ template:
         state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','properties').hyperTmp | int(2931)) - 2731) / 10 }}"
 
       # ---- Production PV (2 MPPT) ----
-      - name: Zendure PV
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} PV"
         unique_id: zendure_solarflow4000mix_pv
         default_entity_id: sensor.zendure_solarflow4000mix_pv
         unit_of_measurement: W
@@ -100,7 +128,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').solarInputPower }}"
 
-      - name: Zendure PV 1
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} PV 1"
         unique_id: zendure_solarflow4000mix_pv_1
         default_entity_id: sensor.zendure_solarflow4000mix_pv_1
         unit_of_measurement: W
@@ -109,7 +137,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').solarPower1 }}"
 
-      - name: Zendure PV 2
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} PV 2"
         unique_id: zendure_solarflow4000mix_pv_2
         default_entity_id: sensor.zendure_solarflow4000mix_pv_2
         unit_of_measurement: W
@@ -119,7 +147,7 @@ template:
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').solarPower2 }}"
 
       # ---- Flux AC ----
-      - name: Zendure sortie maison
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} sortie maison"
         unique_id: zendure_solarflow4000mix_sortie_maison
         default_entity_id: sensor.zendure_solarflow4000mix_sortie_maison
         unit_of_measurement: W
@@ -128,7 +156,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').outputHomePower }}"
 
-      - name: Zendure entree reseau
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} entree reseau"
         unique_id: zendure_solarflow4000mix_entree_reseau
         default_entity_id: sensor.zendure_solarflow4000mix_entree_reseau
         unit_of_measurement: W
@@ -137,7 +165,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').gridInputPower }}"
 
-      - name: Zendure sortie secours
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} sortie secours"
         unique_id: zendure_solarflow4000mix_sortie_secours
         default_entity_id: sensor.zendure_solarflow4000mix_sortie_secours
         unit_of_measurement: W
@@ -149,7 +177,7 @@ template:
           {{ p.gridOffPower | int(0) + p.gridOffPower2 | int(0) }}
 
       # ---- Flux batterie ----
-      - name: Zendure charge batterie
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} charge batterie"
         unique_id: zendure_solarflow4000mix_charge_batterie
         default_entity_id: sensor.zendure_solarflow4000mix_charge_batterie
         unit_of_measurement: W
@@ -158,7 +186,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').outputPackPower }}"
 
-      - name: Zendure decharge batterie
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} decharge batterie"
         unique_id: zendure_solarflow4000mix_decharge_batterie
         default_entity_id: sensor.zendure_solarflow4000mix_decharge_batterie
         unit_of_measurement: W
@@ -167,7 +195,7 @@ template:
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').packInputPower }}"
 
-      - name: Zendure puissance batterie nette
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} puissance batterie nette"
         unique_id: zendure_solarflow4000mix_puissance_batterie_nette
         default_entity_id: sensor.zendure_solarflow4000mix_puissance_batterie_nette
         unit_of_measurement: W
@@ -180,35 +208,35 @@ template:
           {{ p.packInputPower | int(0) - p.outputPackPower | int(0) }}
 
       # ---- Consignes / réglages ----
-      - name: Zendure limite sortie
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} limite sortie"
         unique_id: zendure_solarflow4000mix_limite_sortie
         default_entity_id: sensor.zendure_solarflow4000mix_limite_sortie
         unit_of_measurement: W
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').outputLimit }}"
 
-      - name: Zendure limite charge
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} limite charge"
         unique_id: zendure_solarflow4000mix_limite_charge
         default_entity_id: sensor.zendure_solarflow4000mix_limite_charge
         unit_of_measurement: W
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').inputLimit }}"
 
-      - name: Zendure plafond onduleur
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} plafond onduleur"
         unique_id: zendure_solarflow4000mix_plafond_onduleur
         default_entity_id: sensor.zendure_solarflow4000mix_plafond_onduleur
         unit_of_measurement: W
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').inverseMaxPower }}"
 
-      - name: Zendure plafond charge
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} plafond charge"
         unique_id: zendure_solarflow4000mix_plafond_charge
         default_entity_id: sensor.zendure_solarflow4000mix_plafond_charge
         unit_of_measurement: W
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').chargeMaxLimit }}"
 
-      - name: Zendure SOC min
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} SOC min"
         unique_id: zendure_solarflow4000mix_soc_min
         default_entity_id: sensor.zendure_solarflow4000mix_soc_min
         unit_of_measurement: "%"
@@ -217,7 +245,7 @@ template:
           {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
           {{ (p.minSoc | int(0)) / (10 if (p.socSet | int(0)) > 100 else 1) }}
 
-      - name: Zendure SOC max
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} SOC max"
         unique_id: zendure_solarflow4000mix_soc_max
         default_entity_id: sensor.zendure_solarflow4000mix_soc_max
         unit_of_measurement: "%"
@@ -226,14 +254,14 @@ template:
           {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
           {{ (p.socSet | int(0)) / (10 if (p.socSet | int(0)) > 100 else 1) }}
 
-      - name: Zendure mode AC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} mode AC"
         unique_id: zendure_solarflow4000mix_mode_ac
         default_entity_id: sensor.zendure_solarflow4000mix_mode_ac
         availability: *zav
         state: >-
           {{ {1: 'Charge', 2: 'Décharge'}.get(state_attr('sensor.zendure_solarflow4000mix_raw','properties').acMode | int(0), 'Inconnu') }}
 
-      - name: Zendure injection PV
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} injection PV"
         unique_id: zendure_solarflow4000mix_injection_pv
         default_entity_id: sensor.zendure_solarflow4000mix_injection_pv
         availability: *zav
@@ -241,7 +269,7 @@ template:
           {{ {0: 'Auto', 1: 'Autorisée', 2: 'Interdite'}.get(state_attr('sensor.zendure_solarflow4000mix_raw','properties').gridReverse | int(-1), 'Inconnu') }}
 
       # ---- Diagnostic ----
-      - name: Zendure nombre de packs
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} nombre de packs"
         unique_id: zendure_solarflow4000mix_nombre_de_packs
         default_entity_id: sensor.zendure_solarflow4000mix_nombre_de_packs
         availability: *zav
@@ -250,7 +278,7 @@ template:
       # En liaison filaire (RJ45) la Zendure renvoie rssi = 0, valeur
       # impossible en dBm. On la remonte en « unknown » pour ne pas polluer
       # l'historique et les statistiques avec un 0 qui ressemble à une mesure.
-      - name: Zendure WiFi RSSI
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} WiFi RSSI"
         unique_id: zendure_solarflow4000mix_wifi_rssi
         default_entity_id: sensor.zendure_solarflow4000mix_wifi_rssi
         unit_of_measurement: dBm
@@ -266,7 +294,7 @@ template:
             {{ 'WiFi' if r < 0 else 'Ethernet' }}
 
       # ---- Pack 1 ----
-      - name: Zendure pack 1 SOC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 SOC"
         unique_id: zendure_solarflow4000mix_pack_1_soc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_soc
         unit_of_measurement: "%"
@@ -275,7 +303,7 @@ template:
         availability: &zp1 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 0 }}"
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].socLevel }}"
 
-      - name: Zendure pack 1 puissance
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 puissance"
         unique_id: zendure_solarflow4000mix_pack_1_puissance
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_puissance
         unit_of_measurement: W
@@ -284,7 +312,7 @@ template:
         availability: *zp1
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].power }}"
 
-      - name: Zendure pack 1 tension
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 tension"
         unique_id: zendure_solarflow4000mix_pack_1_tension
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_tension
         unit_of_measurement: V
@@ -293,7 +321,7 @@ template:
         availability: *zp1
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].totalVol | int(0) / 100 }}"
 
-      - name: Zendure pack 1 courant
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 courant"
         unique_id: zendure_solarflow4000mix_pack_1_courant
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_courant
         unit_of_measurement: A
@@ -305,7 +333,7 @@ template:
           {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].batcur | int(0) %}
           {{ ((c - 65536) if c > 32767 else c) / 10 }}
 
-      - name: Zendure pack 1 temperature
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 temperature"
         unique_id: zendure_solarflow4000mix_pack_1_temperature
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_temperature
         unit_of_measurement: "°C"
@@ -314,7 +342,7 @@ template:
         availability: *zp1
         state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].maxTemp | int(2931)) - 2731) / 10 }}"
 
-      - name: Zendure pack 1 ecart cellules
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 1 ecart cellules"
         unique_id: zendure_solarflow4000mix_pack_1_ecart_cellules
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_ecart_cellules
         unit_of_measurement: mV
@@ -325,7 +353,7 @@ template:
           {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
 
       # ---- Pack 2 (présent si la batterie en compte au moins 2) ----
-      - name: Zendure pack 2 SOC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 SOC"
         unique_id: zendure_solarflow4000mix_pack_2_soc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_soc
         unit_of_measurement: "%"
@@ -334,7 +362,7 @@ template:
         availability: &zp2 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 1 }}"
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].socLevel }}"
 
-      - name: Zendure pack 2 puissance
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 puissance"
         unique_id: zendure_solarflow4000mix_pack_2_puissance
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_puissance
         unit_of_measurement: W
@@ -343,7 +371,7 @@ template:
         availability: *zp2
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].power }}"
 
-      - name: Zendure pack 2 tension
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 tension"
         unique_id: zendure_solarflow4000mix_pack_2_tension
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_tension
         unit_of_measurement: V
@@ -352,7 +380,7 @@ template:
         availability: *zp2
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].totalVol | int(0) / 100 }}"
 
-      - name: Zendure pack 2 courant
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 courant"
         unique_id: zendure_solarflow4000mix_pack_2_courant
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_courant
         unit_of_measurement: A
@@ -364,7 +392,7 @@ template:
           {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].batcur | int(0) %}
           {{ ((c - 65536) if c > 32767 else c) / 10 }}
 
-      - name: Zendure pack 2 temperature
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 temperature"
         unique_id: zendure_solarflow4000mix_pack_2_temperature
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_temperature
         unit_of_measurement: "°C"
@@ -373,7 +401,7 @@ template:
         availability: *zp2
         state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].maxTemp | int(2931)) - 2731) / 10 }}"
 
-      - name: Zendure pack 2 ecart cellules
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 2 ecart cellules"
         unique_id: zendure_solarflow4000mix_pack_2_ecart_cellules
         default_entity_id: sensor.zendure_solarflow4000mix_pack_2_ecart_cellules
         unit_of_measurement: mV
@@ -384,7 +412,7 @@ template:
           {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
 
       # ---- Pack 3 (présent si la batterie en compte au moins 3) ----
-      - name: Zendure pack 3 SOC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 SOC"
         unique_id: zendure_solarflow4000mix_pack_3_soc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_soc
         unit_of_measurement: "%"
@@ -393,7 +421,7 @@ template:
         availability: &zp3 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 2 }}"
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].socLevel }}"
 
-      - name: Zendure pack 3 puissance
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 puissance"
         unique_id: zendure_solarflow4000mix_pack_3_puissance
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_puissance
         unit_of_measurement: W
@@ -402,7 +430,7 @@ template:
         availability: *zp3
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].power }}"
 
-      - name: Zendure pack 3 tension
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 tension"
         unique_id: zendure_solarflow4000mix_pack_3_tension
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_tension
         unit_of_measurement: V
@@ -411,7 +439,7 @@ template:
         availability: *zp3
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].totalVol | int(0) / 100 }}"
 
-      - name: Zendure pack 3 courant
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 courant"
         unique_id: zendure_solarflow4000mix_pack_3_courant
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_courant
         unit_of_measurement: A
@@ -423,7 +451,7 @@ template:
           {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].batcur | int(0) %}
           {{ ((c - 65536) if c > 32767 else c) / 10 }}
 
-      - name: Zendure pack 3 temperature
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 temperature"
         unique_id: zendure_solarflow4000mix_pack_3_temperature
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_temperature
         unit_of_measurement: "°C"
@@ -432,7 +460,7 @@ template:
         availability: *zp3
         state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].maxTemp | int(2931)) - 2731) / 10 }}"
 
-      - name: Zendure pack 3 ecart cellules
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 3 ecart cellules"
         unique_id: zendure_solarflow4000mix_pack_3_ecart_cellules
         default_entity_id: sensor.zendure_solarflow4000mix_pack_3_ecart_cellules
         unit_of_measurement: mV
@@ -443,7 +471,7 @@ template:
           {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
 
       # ---- Pack 4 (présent si la batterie en compte au moins 4) ----
-      - name: Zendure pack 4 SOC
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 SOC"
         unique_id: zendure_solarflow4000mix_pack_4_soc
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_soc
         unit_of_measurement: "%"
@@ -452,7 +480,7 @@ template:
         availability: &zp4 "{{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count > 3 }}"
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].socLevel }}"
 
-      - name: Zendure pack 4 puissance
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 puissance"
         unique_id: zendure_solarflow4000mix_pack_4_puissance
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_puissance
         unit_of_measurement: W
@@ -461,7 +489,7 @@ template:
         availability: *zp4
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].power }}"
 
-      - name: Zendure pack 4 tension
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 tension"
         unique_id: zendure_solarflow4000mix_pack_4_tension
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_tension
         unit_of_measurement: V
@@ -470,7 +498,7 @@ template:
         availability: *zp4
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].totalVol | int(0) / 100 }}"
 
-      - name: Zendure pack 4 courant
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 courant"
         unique_id: zendure_solarflow4000mix_pack_4_courant
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_courant
         unit_of_measurement: A
@@ -482,7 +510,7 @@ template:
           {% set c = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].batcur | int(0) %}
           {{ ((c - 65536) if c > 32767 else c) / 10 }}
 
-      - name: Zendure pack 4 temperature
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 temperature"
         unique_id: zendure_solarflow4000mix_pack_4_temperature
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_temperature
         unit_of_measurement: "°C"
@@ -491,7 +519,7 @@ template:
         availability: *zp4
         state: "{{ ((state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].maxTemp | int(2931)) - 2731) / 10 }}"
 
-      - name: Zendure pack 4 ecart cellules
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} pack 4 ecart cellules"
         unique_id: zendure_solarflow4000mix_pack_4_ecart_cellules
         default_entity_id: sensor.zendure_solarflow4000mix_pack_4_ecart_cellules
         unit_of_measurement: mV
@@ -502,7 +530,7 @@ template:
           {{ (d.maxVol | int(0) - d.minVol | int(0)) * 10 }}
 
       # ---- Agrégats tous packs (utiles dès qu'il y en a plusieurs) ----
-      - name: Zendure ecart cellules max
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} ecart cellules max"
         unique_id: zendure_solarflow4000mix_ecart_cellules_max
         default_entity_id: sensor.zendure_solarflow4000mix_ecart_cellules_max
         unit_of_measurement: mV
@@ -513,7 +541,7 @@ template:
           {{ packs | map(attribute='maxVol') | map('int') | list | max
              - packs | map(attribute='minVol') | map('int') | list | min }}
 
-      - name: Zendure temperature pack max
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} temperature pack max"
         unique_id: zendure_solarflow4000mix_temperature_pack_max
         default_entity_id: sensor.zendure_solarflow4000mix_temperature_pack_max
         unit_of_measurement: "°C"
@@ -524,7 +552,7 @@ template:
           {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
           {{ ((packs | map(attribute='maxTemp') | map('int') | list | max) - 2731) / 10 }}
 
-      - name: Zendure ecart SOC packs
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} ecart SOC packs"
         unique_id: zendure_solarflow4000mix_ecart_soc_packs
         default_entity_id: sensor.zendure_solarflow4000mix_ecart_soc_packs
         unit_of_measurement: "%"
@@ -535,14 +563,14 @@ template:
           {{ s | max - s | min }}
 
   - binary_sensor:
-      - name: Zendure erreur
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} erreur"
         unique_id: zendure_solarflow4000mix_erreur
         default_entity_id: binary_sensor.zendure_solarflow4000mix_erreur
         device_class: problem
         availability: *zav
         state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').is_error | int(0) == 1 }}"
 
-      - name: Zendure reseau connecte
+      - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} reseau connecte"
         unique_id: zendure_solarflow4000mix_reseau_connecte
         default_entity_id: binary_sensor.zendure_solarflow4000mix_reseau_connecte
         device_class: connectivity

@@ -97,10 +97,14 @@ le codent en dur comme non supporté. **Merci de ne pas ouvrir d'issue à ce suj
 
 ### Préfixe des entités
 
-Toutes les entités s'appellent `…_zendure_solarflow4000mix_…`, quel que soit ton modèle.
-C'est un **préfixe historique**, conservé volontairement : le renommer casserait
-l'historique, les statistiques à long terme et les dashboards de tous ceux qui ont déjà
-installé le projet. Ce n'est qu'un nom.
+Les **noms affichés** suivent ton modèle : « Zendure SolarFlow 2400 AC+ SOC », « Zendure
+SolarFlow 800 Pro puissance »… c'est automatique, déduit de ce que la batterie annonce.
+
+En revanche, les **identifiants techniques** restent `…_zendure_solarflow4000mix_…`, quel que
+soit ton modèle. C'est un **préfixe historique**, conservé volontairement : le renommer
+casserait l'historique, les statistiques à long terme, les automatisations et les dashboards
+de tous ceux qui ont déjà installé le projet. Ce n'est qu'un identifiant, invisible au
+quotidien.
 
 ---
 
@@ -750,6 +754,20 @@ Accessibles par des **scripts HA** dans l'onglet Réglages. Ils écrivent en `sm
 ---
 
 ## Référence des entités
+
+> 💡 **Les noms affichés portent ton modèle.** La batterie annonce son modèle dans le champ
+> `product` ; le projet l'habille et le place devant chaque nom. Sur une 2400 AC+ tu lis
+> donc « Zendure SolarFlow 2400 AC+ SOC », sans rien avoir à configurer. Un capteur dédié,
+> `sensor.zendure_solarflow4000mix_modele`, expose ce libellé si tu veux t'en servir ailleurs.
+>
+> ⚠️ Seul le **nom affiché** est dynamique. Les **identifiants techniques** restent figés sur
+> `zendure_solarflow4000mix_…` (voir [Préfixe des entités](#préfixe-des-entités)) : c'est ce
+> qui garantit que tes historiques, tes statistiques et tes automatisations survivent aux
+> mises à jour. Les listes ci-dessous donnent le suffixe de ces identifiants.
+>
+> Trois capteurs internes (`raw`, `reseau_shelly`, `config_shelly`) et le compteur
+> `pack_N_energie_dc` gardent un nom statique : leur plateforme Home Assistant n'accepte pas
+> de nom dynamique. Ils ne sont pas destinés à l'affichage.
 
 <details>
 <summary>📊 Capteurs principaux (cliquer pour dérouler)</summary>

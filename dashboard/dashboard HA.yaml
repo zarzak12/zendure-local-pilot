@@ -1336,14 +1336,26 @@ views:
               {% set base = 'https://cdn.jsdelivr.net/gh/Gielz1986/Zendure-HA-zenSDK@main/Devices/' %}
               {% set raw = states.sensor.zendure_solarflow4000mix_raw %}
               {% set age = (now() - raw.last_updated).total_seconds() if raw else 9999 %}
-              <img src="{{ base ~ ('V2_SF_3000_4000_Mix.png' if age < 120 else 'Inactive.png') }}">
+              {% set images = {
+                   'solarFlow4000MixPro': 'V2_SF_3000_4000_Mix.png',
+                   'solarFlow4000MixAC+': 'V2_SF_3000_4000_Mix.png',
+                   'solarFlow3000MixPro': 'V2_SF_3000_4000_Mix.png',
+                   'solarFlow3000MixAC+': 'V2_SF_3000_4000_Mix.png',
+                   'solarFlow2400AC':     'V2_SF_2400_AC.png',
+                   'solarFlow2400AC+':    'V2_SF_2400_AC_Plus_Pro.png',
+                   'solarFlow2400Pro':    'V2_SF_2400_AC_Plus_Pro.png',
+                   'solarFlow1600AC+':    'V2_SF_1600_AC_Plus.png',
+                   'solarFlow800':        'V2_SF_800_Plus.png',
+                   'solarFlow800Plus':    'V2_SF_800_Plus.png',
+                   'solarFlow800Pro':     'V2_SF_800_Pro.png' } %}
+              <img src="{{ base ~ (images.get(states('sensor.zendure_solarflow4000mix_raw'), 'V2_SF_3000_4000_Mix.png') if age < 120 else 'Inactive.png') }}">
           - type: markdown
             text_only: true
             grid_options: {columns: 9, rows: auto}
             content: >-
               {% set raw = states.sensor.zendure_solarflow4000mix_raw %}
 
-              **SolarFlow 4000 Mix Pro** ({{ states('input_number.zendure_solarflow4000mix_capacite') }} kWh)
+              **Zendure {{ states('sensor.zendure_solarflow4000mix_modele') }}** ({{ states('input_number.zendure_solarflow4000mix_capacite') }} kWh)
 
               {{ state_attr('sensor.zendure_solarflow4000mix_raw', 'sn') }}
 
