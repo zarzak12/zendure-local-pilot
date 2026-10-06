@@ -1,13 +1,19 @@
-# Zendure SolarFlow 4000 MIX PRO — pilotage 100 % local (Shelly Pro 3EM + Home Assistant)
+# Zendure SolarFlow — pilotage 100 % local (Shelly Pro 3EM + Home Assistant)
 
 [![Licence : MIT](https://img.shields.io/badge/Licence-MIT-green.svg)](LICENSE)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.10%2B-41BDF5?logo=homeassistant&logoColor=white)
 ![Shelly Pro 3EM](https://img.shields.io/badge/Shelly-Pro%203EM-FF5C00)
 ![100 % local](https://img.shields.io/badge/Cloud-non%20requis-success)
 
-Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'API locale
+Pilotage **entièrement local** d'une batterie **Zendure SolarFlow** via l'API locale
 [zenSDK](https://github.com/Zendure/zenSDK), avec une régulation **autoconsommation
 (injection zéro)** qui tourne **directement dans le Shelly Pro 3EM**.
+
+Développé sur une **SolarFlow 4000 MIX PRO**, le projet fonctionne sur **tous les appareils
+qui exposent le zenSDK** : SolarFlow 2400 AC / AC+ / Pro, 800 / 800 Plus / 800 Pro,
+1600 AC+, 3000 et 4000 MIX. Les limites de puissance sont **lues dans la batterie
+elle-même**, il n'y a donc rien à adapter d'un modèle à l'autre.
+Voir [Modèles compatibles](#modèles-compatibles).
 
 > **Pourquoi ce projet ?**
 > L'intégration HACS [Zendure-HA](https://github.com/Zendure/Zendure-HA) ne gère pas encore
@@ -19,6 +25,7 @@ Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'A
 
 ## Sommaire
 
+- [Modèles compatibles](#modèles-compatibles)
 - [Principe de fonctionnement](#principe-de-fonctionnement)
 - [Ce que contient le dépôt](#ce-que-contient-le-dépôt)
 - [Prérequis](#prérequis)
@@ -28,7 +35,7 @@ Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'A
   - [Étape 3 — Installer le script de régulation dans le Shelly](#étape-3--installer-le-script-de-régulation-dans-le-shelly)
   - [Étape 4 — Ajouter le Shelly à Home Assistant](#étape-4--ajouter-le-shelly-à-home-assistant)
   - [Étape 5 — Installer les packages Home Assistant](#étape-5--installer-les-packages-home-assistant)
-  - [Étape 6 — Renseigner l'IP du Shelly](#étape-6--renseigner-lip-du-shelly)
+  - [Étape 6 — Renseigner l'IP du Shelly et le canal de la pince](#étape-6--renseigner-lip-du-shelly-et-le-canal-de-la-pince)
   - [Étape 7 — Installer le dashboard](#étape-7--installer-le-dashboard)
 - [Utilisation](#utilisation)
 - [Mettre à jour](#mettre-à-jour)
@@ -42,6 +49,58 @@ Pilotage **entièrement local** d'une **Zendure SolarFlow 4000 MIX PRO** via l'A
 - [Sécurité et avertissements](#sécurité-et-avertissements)
 - [Licence](#licence)
 - [Crédits](#crédits)
+
+---
+
+## Modèles compatibles
+
+Le seul critère est l'**API locale zenSDK**. Si `http://IP_BATTERIE/properties/report`
+répond un JSON, le projet fonctionne. Tous ces appareils partagent le même contrat
+d'API : mêmes points d'entrée, mêmes noms de propriétés.
+
+| Appareil | Chaîne `product` | Charge | Décharge | Remarques |
+|---|---|---|---|---|
+| SolarFlow 4000 MIX PRO | `solarFlow4000MixPro` | 3000 W | 3000 W | modèle de développement, validé en réel |
+| SolarFlow 4000 MIX AC+ | `solarFlow4000MixAC+` | 3000 W | 3000 W | |
+| SolarFlow 3000 MIX AC+ | `solarFlow3000MixAC+` | 3000 W | 3000 W | |
+| SolarFlow 2400 AC | `solarFlow2400AC` | 2400 W | 2400 W | **sans entrée PV** : les capteurs solaires restent à 0 |
+| SolarFlow 2400 AC+ | `solarFlow2400AC+` | 3200 W | 2400 W | |
+| SolarFlow 2400 Pro | `solarFlow2400Pro` | 3200 W | 2400 W | |
+| SolarFlow 1600 AC+ | `solarFlow1600AC+` | 1600 W | 1600 W | |
+| SolarFlow 800 / Plus / Pro | `solarFlow800…` | 800–1200 W | 800–1000 W | |
+
+Les puissances ci-dessus sont **indicatives** : le script ne s'en sert pas. Il lit
+`inverseMaxPower` et `chargeMaxLimit` directement dans la batterie et **ajuste tout seul
+les curseurs de Home Assistant**. Tu ne peux donc jamais demander une puissance que ton
+matériel refusera. Si ta batterie ne renvoie pas ces champs, le projet retombe sur une
+borne de 4000 W sans rien plafonner.
+
+De même, la **capacité des packs** est déduite du préfixe de leur numéro de série
+(AB1000, AB2000, AB3000, AIO2400, packs internes I2400 et I8000…), comme le fait
+l'intégration officielle. Rien à déclarer.
+
+### Hyper 2000 : non compatible, et ça ne changera pas
+
+Le **Hyper 2000 n'expose pas le zenSDK** et ne l'exposera pas. Ce n'est pas une limite de
+ce projet mais une décision de Zendure, confirmée à plusieurs reprises par un membre de
+leur équipe :
+
+> *« it will not support zenSDK-style local control features such as mDNS or local API
+> access […] I do not see a realistic path »*
+> — zenSDK [#61](https://github.com/Zendure/zenSDK/issues/61), voir aussi
+> [#18](https://github.com/Zendure/zenSDK/issues/18)
+
+Son module de connectivité a été développé par un tiers et se pilote uniquement en MQTT,
+avec un mécanisme (`function/invoke`, `deviceAutomation`) sans rapport avec le
+`/properties/write` utilisé ici. Les autres projets de l'écosystème font le même constat et
+le codent en dur comme non supporté. **Merci de ne pas ouvrir d'issue à ce sujet.**
+
+### Préfixe des entités
+
+Toutes les entités s'appellent `…_zendure_solarflow4000mix_…`, quel que soit ton modèle.
+C'est un **préfixe historique**, conservé volontairement : le renommer casserait
+l'historique, les statistiques à long terme et les dashboards de tous ceux qui ont déjà
+installé le projet. Ce n'est qu'un nom.
 
 ---
 
@@ -194,6 +253,10 @@ et ne la réveille que si la consigne dépasse le *seuil de réveil*.
 
    ⚠️ Si tu obtiens une erreur de connexion, l'API locale n'est pas activée : refais l'étape 2.
    Le `sn` est requis dans toutes les écritures — le système le lit et le mémorise tout seul.
+
+   > 💡 Le champ `product` t'indique ton modèle exact. S'il apparaît dans
+   > [Modèles compatibles](#modèles-compatibles), tu n'as **aucune adaptation à faire** :
+   > puissances maximales et capacité des batteries sont détectées automatiquement.
 
 > 💡 **Trouver l'IP de la Zendure** (utile seulement pour ce test) : elle
 > s'annonce en mDNS sous `Zendure-<Modèle>-<12 derniers caractères MAC>`.

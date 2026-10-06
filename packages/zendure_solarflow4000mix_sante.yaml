@@ -190,7 +190,15 @@ template:
           {{ (states('sensor.zendure_solarflow4000mix_pack_4_tension') | float(0)
               * states('sensor.zendure_solarflow4000mix_pack_4_courant') | float(0)) | round(1) }}
 
-      # ---- Capacité nominale d'un pack, déduite de son type ----
+      # ---- Capacité nominale d'un pack ----
+      # Résolue par le PRÉFIXE DU NUMÉRO DE SÉRIE, comme l'intégration
+      # officielle Zendure-HA, et non par packType seul : la doc zenSDK
+      # classe packType en « Reserved » et la même valeur désigne des packs
+      # différents selon le modèle. Cas emblématique : packType 70 vaut 8 kWh
+      # (pack interne I8000 des SolarFlow Mix) alors que d'autres tables
+      # communautaires lui prêtent 1,92 kWh.
+      # packType ne sert qu'à départager les SN commençant par B, et de repli
+      # quand le préfixe est inconnu.
       - name: Zendure pack 1 capacite nominale
         unique_id: zendure_solarflow4000mix_pack_1_capacite_nominale
         default_entity_id: sensor.zendure_solarflow4000mix_pack_1_capacite_nominale
@@ -200,13 +208,19 @@ template:
         availability: >-
           {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 1 }}
         state: >-
-          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
-            {% set table = { 70: 8.00 } %}
-          {% else %}
-            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
-          {% endif %}
-          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[0].packType | int(0) %}
-          {{ table.get(t, 0) }}
+          {% set pd = (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [{}])[0] %}
+          {% set sn = (pd.sn | default('')) | string | upper %}
+          {% set t = pd.packType | int(0) %}
+          {% set p0 = sn[0:1] %}
+          {% set p3 = sn[3:4] %}
+          {% set repli = { 5: 2.88, 250: 0.96, 300: 1.92, 500: 2.40 } %}
+          {{ 2.40 if p0 == 'A' and p3 == '3'
+               else 0.96 if p0 == 'A'
+               else (8.00 if t == 70 else 0.96) if p0 == 'B'
+               else 1.92 if p0 == 'C'
+               else 2.88 if p0 in ['F', 'G']
+               else 2.40 if p0 == 'J'
+               else repli.get(t, 0) }}
 
       - name: Zendure pack 2 capacite nominale
         unique_id: zendure_solarflow4000mix_pack_2_capacite_nominale
@@ -217,13 +231,19 @@ template:
         availability: >-
           {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 2 }}
         state: >-
-          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
-            {% set table = { 70: 8.00 } %}
-          {% else %}
-            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
-          {% endif %}
-          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[1].packType | int(0) %}
-          {{ table.get(t, 0) }}
+          {% set pd = (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [{}])[1] %}
+          {% set sn = (pd.sn | default('')) | string | upper %}
+          {% set t = pd.packType | int(0) %}
+          {% set p0 = sn[0:1] %}
+          {% set p3 = sn[3:4] %}
+          {% set repli = { 5: 2.88, 250: 0.96, 300: 1.92, 500: 2.40 } %}
+          {{ 2.40 if p0 == 'A' and p3 == '3'
+               else 0.96 if p0 == 'A'
+               else (8.00 if t == 70 else 0.96) if p0 == 'B'
+               else 1.92 if p0 == 'C'
+               else 2.88 if p0 in ['F', 'G']
+               else 2.40 if p0 == 'J'
+               else repli.get(t, 0) }}
 
       - name: Zendure pack 3 capacite nominale
         unique_id: zendure_solarflow4000mix_pack_3_capacite_nominale
@@ -234,13 +254,19 @@ template:
         availability: >-
           {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 3 }}
         state: >-
-          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
-            {% set table = { 70: 8.00 } %}
-          {% else %}
-            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
-          {% endif %}
-          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[2].packType | int(0) %}
-          {{ table.get(t, 0) }}
+          {% set pd = (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [{}])[2] %}
+          {% set sn = (pd.sn | default('')) | string | upper %}
+          {% set t = pd.packType | int(0) %}
+          {% set p0 = sn[0:1] %}
+          {% set p3 = sn[3:4] %}
+          {% set repli = { 5: 2.88, 250: 0.96, 300: 1.92, 500: 2.40 } %}
+          {{ 2.40 if p0 == 'A' and p3 == '3'
+               else 0.96 if p0 == 'A'
+               else (8.00 if t == 70 else 0.96) if p0 == 'B'
+               else 1.92 if p0 == 'C'
+               else 2.88 if p0 in ['F', 'G']
+               else 2.40 if p0 == 'J'
+               else repli.get(t, 0) }}
 
       - name: Zendure pack 4 capacite nominale
         unique_id: zendure_solarflow4000mix_pack_4_capacite_nominale
@@ -251,13 +277,19 @@ template:
         availability: >-
           {{ (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or []) | count >= 4 }}
         state: >-
-          {% if states('sensor.zendure_solarflow4000mix_raw') in ['solarFlow4000MixAC+', 'solarFlow4000MixPro', 'solarFlow3000MixAC+'] %}
-            {% set table = { 70: 8.00 } %}
-          {% else %}
-            {% set table = { 5: 2.88, 70: 1.92, 250: 0.96, 300: 1.92, 350: 2.88, 500: 2.40 } %}
-          {% endif %}
-          {% set t = state_attr('sensor.zendure_solarflow4000mix_raw','packData')[3].packType | int(0) %}
-          {{ table.get(t, 0) }}
+          {% set pd = (state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [{}])[3] %}
+          {% set sn = (pd.sn | default('')) | string | upper %}
+          {% set t = pd.packType | int(0) %}
+          {% set p0 = sn[0:1] %}
+          {% set p3 = sn[3:4] %}
+          {% set repli = { 5: 2.88, 250: 0.96, 300: 1.92, 500: 2.40 } %}
+          {{ 2.40 if p0 == 'A' and p3 == '3'
+               else 0.96 if p0 == 'A'
+               else (8.00 if t == 70 else 0.96) if p0 == 'B'
+               else 1.92 if p0 == 'C'
+               else 2.88 if p0 in ['F', 'G']
+               else 2.40 if p0 == 'J'
+               else repli.get(t, 0) }}
 
       # ---- État de santé estimé ----
       - name: Zendure pack 1 sante

@@ -213,14 +213,18 @@ template:
         default_entity_id: sensor.zendure_solarflow4000mix_soc_min
         unit_of_measurement: "%"
         availability: *zav
-        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').minSoc | int(0) / 10 }}"
+        state: >-
+          {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
+          {{ (p.minSoc | int(0)) / (10 if (p.socSet | int(0)) > 100 else 1) }}
 
       - name: Zendure SOC max
         unique_id: zendure_solarflow4000mix_soc_max
         default_entity_id: sensor.zendure_solarflow4000mix_soc_max
         unit_of_measurement: "%"
         availability: *zav
-        state: "{{ state_attr('sensor.zendure_solarflow4000mix_raw','properties').socSet | int(0) / 10 }}"
+        state: >-
+          {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
+          {{ (p.socSet | int(0)) / (10 if (p.socSet | int(0)) > 100 else 1) }}
 
       - name: Zendure mode AC
         unique_id: zendure_solarflow4000mix_mode_ac
@@ -683,12 +687,20 @@ script:
       - variables:
           mn: "{{ [[min_soc | int(10), 0] | max, 50] | min }}"
           mx: "{{ [[max_soc | int(100), 70] | max, 100] | min }}"
+          # Tous les firmwares n'emploient pas la même échelle : la plupart
+          # renvoient des pour-mille (socSet 1000 = 100 %), certains des
+          # pourcentages bruts (zenSDK issue 85). socSet, documenté entre 70
+          # et 100 %, sert d'indicateur : au-delà de 100, on est en pour-mille.
+          # Écrire dans la mauvaise échelle enverrait une consigne aberrante.
+          ech: >-
+            {{ 10 if (state_attr('sensor.zendure_solarflow4000mix_raw','properties').socSet
+                      | int(0)) > 100 else 1 }}
       - condition: template
         value_template: "{{ mx > mn }}"
       # smartMode 0 : écriture persistante (flash), réglage rare
       - action: rest_command.zendure_solarflow4000mix_write
         data:
-          props: "{{ {'smartMode': 0, 'minSoc': mn * 10, 'socSet': mx * 10} }}"
+          props: "{{ {'smartMode': 0, 'minSoc': mn * (ech | int), 'socSet': mx * (ech | int)} }}"
       - delay: 2
       - action: rest_command.zendure_solarflow4000mix_write
         data:

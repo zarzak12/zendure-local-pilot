@@ -1,4 +1,14 @@
-// Zendure SolarFlow 4000 MIX PRO — régulation locale Shelly -> Zendure, réglages depuis HA
+// Zendure zenSDK — régulation locale Shelly -> batterie, réglages depuis HA
+// Shelly Pro 3EM en profil monophasé (+ soutirage / − injection)
+// Compatible avec tous les appareils Zendure exposant l'API HTTP locale zenSDK :
+// SolarFlow 4000 MIX PRO / MIX AC+, 3000 MIX AC+, 2400 AC / AC+ / Pro,
+// 1600 AC+, 800 / 800 Plus / 800 Pro. Ils partagent le même contrat d'API
+// (/properties/report et /properties/write, mêmes noms de propriétés).
+// Les plafonds de puissance ne sont pas codés en dur : ils sont lus dans le
+// rapport de la batterie (inverseMaxPower / chargeMaxLimit).
+//
+// NON compatible avec le Hyper 2000, qui n'expose aucun serveur HTTP local
+// (pilotage cloud/MQTT uniquement, confirmé par Zendure : zenSDK issues 18 et 61).
 // Shelly Pro 3EM en profil monophasé (+ soutirage / − injection)
 //
 // La pince qui mesure le point de livraison n'est pas forcément la première :
@@ -73,6 +83,45 @@ let LOCK_MAX = 20, FAILSAFE = 90;
 function zLock() { zBusy = true; zBusyAt = uptime(); }
 function wLock() { wBusy = true; wBusyAt = uptime(); }
 let lastG = null, wantReg = false, wantG = 0, wantMode = "arret";
+
+// ---- Limites matérielles, déclarées par la batterie ----
+// Chaque modèle a ses propres plafonds (2400 W sur un SolarFlow 2400 AC,
+// 3000 W sur un 4000 MIX PRO, 800 W sur un SolarFlow 800...). Plutôt que de
+// les coder en dur par modèle, on lit ce que la batterie annonce :
+//   inverseMaxPower -> plafond de décharge      chargeMaxLimit -> plafond de charge
+// Ces deux valeurs sont aussi réglables par l'utilisateur ; les respecter
+// revient donc à ne jamais demander une puissance que la batterie refusera.
+// hwD/hwC à 0 = pas encore connu : on n'impose alors aucune limite.
+let hwD = 0, hwC = 0, appD = 0, appC = 0;
+
+function plausible(v) {
+    return typeof v === "number" && v > 0 && v <= 10000;
+}
+
+// Aligne les curseurs du Shelly sur les plafonds réels de la batterie.
+// Number.SetConfig écrit en flash : on ne le fait que si la limite a bougé,
+// jamais à chaque cycle.
+function syncLimits() {
+    if (appD === hwD && appC === hwC) return;
+    appD = hwD; appC = hwC;
+    let d = hwD > 0 ? hwD : 4000, c = hwC > 0 ? hwC : 4000;
+    VC[1].config.max = d;
+    VC[2].config.max = c;
+    VC[3].config.min = -c;
+    VC[3].config.max = d;
+    print("Zendure: plafonds matériels - décharge", d, "W, charge", c, "W");
+    for (let i = 1; i <= 3; i++) {
+        Shelly.call(rpc(VC[i].type, "SetConfig"), { id: VC[i].config.id, config: VC[i].config });
+    }
+}
+
+function readLimits(p) {
+    let d = plausible(p.inverseMaxPower) ? p.inverseMaxPower : hwD;
+    let c = plausible(p.chargeMaxLimit) ? p.chargeMaxLimit : hwC;
+    if (d === hwD && c === hwC) return;
+    hwD = d; hwC = c;
+    syncLimits();
+}
 
 // ---- Composants virtuels (réglages courants, visibles dans HA) ----
 // key : clé du composant, précalculée (mJS ne concatène pas nombre + chaîne).
@@ -402,6 +451,7 @@ function fetchZ() {
         Z = { sn: d.sn, cur: p.outputLimit - p.inputLimit,
               acNow: p.outputHomePower - p.gridInputPower, acMode: p.acMode,
               lim: p.socLimit % 16, gen: gen, tick: ticks };
+        readLimits(p);
         if (wantReg) {
             wantReg = false;
             // Une écriture partie pendant la lecture rendrait cet instantané
@@ -548,6 +598,10 @@ function decide(g, mode, z) {
     let regulated = (mode === "autoconso" || mode === "charge_seule" || mode === "decharge_seule");
     let cur = z.cur;
     let dMax = val(VC[1].key, 4000), cMax = val(VC[2].key, 4000);
+    // Le plafond annoncé par la batterie prime : demander plus serait refusé,
+    // et ferait croire à la régulation qu'elle dispose d'une marge inexistante.
+    if (hwD > 0) dMax = Math.min(dMax, hwD);
+    if (hwC > 0) cMax = Math.min(cMax, hwC);
     let t;
 
     if (mode === "arret") t = 0;
