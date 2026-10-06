@@ -1,9 +1,14 @@
 // Zendure SolarFlow 4000 MIX PRO — régulation locale Shelly -> Zendure, réglages depuis HA
-// Shelly Pro 3EM en profil monophasé, pince réseau sur em1:0 (+ soutirage / − injection)
+// Shelly Pro 3EM en profil monophasé (+ soutirage / − injection)
+//
+// La pince qui mesure le point de livraison n'est pas forcément la première :
+// selon le câblage, c'est em1:0, em1:1 ou em1:2. Le canal est donc un réglage
+// (zendure_em), et non une valeur figée dans le code — sinon chaque mise à jour
+// du script écraserait le choix de l'utilisateur.
 //
 // Paramètres avancés stockés dans le KVS du Shelly (modifiables depuis HA ou par URL) :
-//   zendure_ip, zendure_sn, zendure_tick (ms), zendure_period (ms), zendure_gain,
-//   zendure_dead (W), zendure_hyst (W), zendure_wake (W), zendure_flip (s)
+//   zendure_ip, zendure_sn, zendure_em (0-2), zendure_tick (ms), zendure_period (ms),
+//   zendure_gain, zendure_dead (W), zendure_hyst (W), zendure_wake (W), zendure_flip (s)
 // Exemple : http://IP_SHELLY/rpc/KVS.Set?key="zendure_gain"&value=0.6
 //
 // L'IP de la Zendure n'a pas besoin d'être exacte : elle sert de point de départ.
@@ -26,10 +31,10 @@
 // le réseau du Shelly et l'enregistre dans le KVS. Rien à saisir nulle part.
 // La renseigner ici fait juste gagner les ~30 s de recherche au tout 1er
 // démarrage. Idem pour zendure_sn, appris au premier contact.
-let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_tick: 250, zendure_period: 1000,
+let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_em: 0, zendure_tick: 250, zendure_period: 1000,
     zendure_gain: 0.9, zendure_dead: 30, zendure_hyst: 25, zendure_wake: 80, zendure_flip: 8 };
-let CFG = { ip: DEFAULTS.zendure_ip, sn: DEFAULTS.zendure_sn, tick: DEFAULTS.zendure_tick,
-    period: DEFAULTS.zendure_period,
+let CFG = { ip: DEFAULTS.zendure_ip, sn: DEFAULTS.zendure_sn, em: DEFAULTS.zendure_em,
+    tick: DEFAULTS.zendure_tick, period: DEFAULTS.zendure_period,
     gain: DEFAULTS.zendure_gain, dead: DEFAULTS.zendure_dead, hyst: DEFAULTS.zendure_hyst,
     wake: DEFAULTS.zendure_wake, flip: DEFAULTS.zendure_flip };
 let DEBUG = false;   // true pour tracer chaque cycle dans la console
@@ -124,9 +129,11 @@ function kvsToMap(res) {
 }
 
 function applyCfg(m) {
-    let oldTick = CFG.tick, oldPeriod = CFG.period;
+    let oldTick = CFG.tick, oldPeriod = CFG.period, oldEm = CFG.em;
     CFG.ip     = validIp(m.zendure_ip) ? m.zendure_ip : CFG.ip;
     CFG.sn     = (typeof m.zendure_sn === "string") ? m.zendure_sn : CFG.sn;
+    // Canal de la pince réseau : 0, 1 ou 2 en profil monophasé.
+    CFG.em     = Math.round(num(m.zendure_em, CFG.em, 0, 2));
     CFG.tick   = Math.round(num(m.zendure_tick, CFG.tick, 100, 2000));
     // Plancher à 1000 ms : en dessous, le serveur HTTP de la Zendure sature
     // (réponses jusqu'à ~10 s au lieu de 90 ms). Mesuré, pas supposé.
@@ -137,7 +144,20 @@ function applyCfg(m) {
     CFG.wake   = num(m.zendure_wake, CFG.wake, 0, 500);
     CFG.flip   = Math.round(num(m.zendure_flip, CFG.flip, 0, 300));
     if (tickTmr !== null && (CFG.tick !== oldTick || CFG.period !== oldPeriod)) startTimers();
+    // lastG sert à repérer l'arrivée d'une mesure fraîche ; après un changement
+    // de canal il décrit une autre pince, et une valeur identique par hasard
+    // ferait passer la nouvelle mesure pour une répétition.
+    if (CFG.em !== oldEm) lastG = null;
+    checkEm();
     print("Zendure cfg:", JSON.stringify(CFG));
+}
+
+// Un canal inexistant (mauvais numéro, ou Shelly en profil triphasé) ne produit
+// aucune mesure : la régulation resterait muette sans rien signaler.
+function checkEm() {
+    if (gridPower() !== null) return;
+    print("Zendure: ATTENTION, aucune mesure sur em1:" + JSON.stringify(CFG.em) +
+          " - verifie le canal de la pince (zendure_em) et le profil monophase du Shelly");
 }
 
 function seed(keys, i, done) {
@@ -274,7 +294,7 @@ function uptime() {
 }
 
 function gridPower() {
-    let s = Shelly.getComponentStatus("em1", 0);
+    let s = Shelly.getComponentStatus("em1", CFG.em);
     return (s && typeof s.act_power === "number") ? s.act_power : null;
 }
 

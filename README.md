@@ -81,7 +81,7 @@ buffer   = buffer_décharge si (puissance_ac_actuelle + puissance_réseau) ≥ 0
 consigne = puissance_ac_actuelle + (puissance_réseau - buffer) × gain
 ```
 
-- `puissance_réseau` : mesure du Shelly (`em1:0`), **+ = soutirage**, **− = injection**
+- `puissance_réseau` : mesure du Shelly (canal `em1` configurable), **+ = soutirage**, **− = injection**
 - `buffer` : point de fonctionnement visé sur la pince, de **−200 à +200 W**.
   Positif = soutirage résiduel volontaire (marge anti-injection) ; `0` = injection
   zéro stricte ; **négatif = injection résiduelle tolérée**, utile si ton compteur
@@ -208,14 +208,19 @@ et ne la réveille que si la consigne dépasse le *seuil de réveil*.
    **seule adresse que tu auras à saisir** dans tout le projet : note-la.
 2. Interface web du Shelly → **Settings → Device profile** → choisis **Monophasé
    (« Single-phase / Triphase monitor »)**.
-   Ce projet lit le canal **`em1:0`**, qui doit être la **pince sur l'arrivée générale**.
-3. Vérifie le signe de la mesure : dans **Status**, la puissance active de `em1:0` doit être
+3. **Repère laquelle des trois pinces mesure l'arrivée générale.** Elles sont
+   numérotées `em1:0`, `em1:1` et `em1:2`, et rien n'impose que ce soit la
+   première : cela dépend de ton câblage. Dans **Status**, regarde laquelle suit
+   la consommation de toute la maison (allume un gros appareil pour lever le
+   doute). **Note son numéro** — tu le saisiras à l'étape 6.
+   L'outil `tools/personnaliser.ps1` affiche les trois pinces pour t'aider.
+4. Vérifie le signe de la mesure : la puissance active de ta pince doit être
    **positive quand tu soutires** et **négative quand tu injectes**.
    Si c'est inversé, retourne la pince ou active l'inversion dans les réglages du canal.
-4. Mets le firmware à jour (**Settings → Firmware**).
+5. Mets le firmware à jour (**Settings → Firmware**).
 
 > ⚠️ Si tu utilises le Shelly en **triphasé**, ce script ne convient pas tel quel :
-> il faudrait lire `em:0.total_act_power` au lieu de `em1:0.act_power`
+> il faudrait lire `em:0.total_act_power` au lieu de `em1:N.act_power`
 > (voir [Pour les experts](#pour-les-experts)).
 
 ---
@@ -237,7 +242,7 @@ et ne la réveille que si la consigne dépasse le *seuil de réveil*.
    [Découverte automatique](#découverte-automatique-de-la-zendure)).
 
    ```js
-   let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_tick: 250, zendure_period: 1000,
+   let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_em: 0, zendure_tick: 250, zendure_period: 1000,
        zendure_gain: 0.9, zendure_dead: 30, zendure_hyst: 25, zendure_wake: 80, zendure_flip: 8 };
    ```
 
@@ -384,7 +389,7 @@ Vérifie-les dans l'onglet **Components / Virtual components** du Shelly.
 
 ---
 
-### Étape 6 — Renseigner l'IP du Shelly
+### Étape 6 — Renseigner l'IP du Shelly et le canal de la pince
 
 **Aucun fichier à modifier.** Les packages ne contiennent aucune adresse IP :
 tout se règle depuis l'interface de Home Assistant.
@@ -396,13 +401,24 @@ tout se règle depuis l'interface de Home Assistant.
    (celle notée à l'étape 2).
    Tu pourras aussi le faire depuis l'onglet **Réglages** du dashboard,
    une fois celui-ci installé à l'étape 7.
+3. Si ta pince d'arrivée générale **n'est pas la première**, règle
+   `zendure_solarflow4000mix_em_canal` sur **1** ou **2** (numéro relevé à
+   l'étape 2). Laisse **0** dans le cas le plus courant.
 
 C'est tout. Tant que ce champ est vide, les capteurs restent *indisponibles* :
 c'est normal.
 
+> 💡 **Comment savoir si le canal est le bon ?** Compare
+> `sensor.zendure_solarflow4000mix_reseau` à ce qu'affiche ton compteur. Si la
+> valeur reste proche de 0 alors que la maison consomme, ou qu'elle ne suit
+> qu'un seul appareil, c'est que tu lis la mauvaise pince. La console du script
+> signale par ailleurs un canal inexistant :
+> `ATTENTION, aucune mesure sur em1:N`.
+
 | Donnée | Comment elle est obtenue |
 |---|---|
 | IP du **Shelly** | 👉 **la seule que tu saisis**, une fois pour toutes |
+| Canal de la pince | 👉 à vérifier une fois à l'installation (0 par défaut) |
 | IP de la **Zendure** | découverte par le script, transmise à HA automatiquement |
 | Numéro de série de la batterie | lu et mémorisé au premier contact |
 | Préfixe d'entités du Shelly | appliqué au dashboard par `tools/personnaliser.ps1` (étape 7) |
@@ -554,7 +570,7 @@ outil).
 
 | Réglage | Où il vit | Sort d'une mise à jour |
 |---|---|---|
-| IP et SN de la batterie, période, gain, zone morte, hystérésis, seuil de réveil, délai d'inversion | KVS du Shelly | **intact** : au démarrage le script ne crée que les clés *absentes*, il n'écrase jamais une clé existante |
+| IP et SN de la batterie, **canal de la pince**, période, gain, zone morte, hystérésis, seuil de réveil, délai d'inversion | KVS du Shelly | **intact** : au démarrage le script ne crée que les clés *absentes*, il n'écrase jamais une clé existante |
 | Mode, décharge/charge max, consigne manuelle, buffers, délai de veille | composants virtuels du Shelly | **intacts** : le redéploiement réécrit leur *configuration*, pas leur *valeur* |
 | Bornes SOC, capacité, cases du dashboard | helpers Home Assistant | **intacts** : HA restaure la dernière valeur au redémarrage |
 | Historique, statistiques, tableau Énergie | base de données HA | **intact** tant que les `entity_id` ne changent pas |
@@ -567,6 +583,16 @@ tes valeurs. C'est précisément ce qui rend la mise à jour sans risque.
 > enregistrée n'existe plus dans la nouvelle liste et repasse sur **Arrêt** par
 > sécurité — plutôt que de régler sur une option au hasard. Resélectionne
 > simplement ton mode. C'est signalé dans les notes de version quand ça arrive.
+
+> 📌 **Tu avais modifié le script à la main pour lire une autre pince ?**
+> Jusqu'ici le canal `em1:0` était écrit en dur : changer de pince imposait
+> d'éditer le code, et **chaque mise à jour effaçait la modification** — la
+> régulation repartait silencieusement sur la pince 0, donc sur une mesure qui
+> n'était pas celle du compteur général.
+> C'est corrigé : le canal est devenu un réglage (`zendure_em`), stocké dans le
+> KVS du Shelly. Après cette mise à jour, **remets ton numéro de pince une
+> dernière fois** dans l'onglet *Réglages* → « Canal pince réseau ». Il survivra
+> à toutes les mises à jour suivantes.
 
 ### Revenir en arrière
 
@@ -600,6 +626,7 @@ Puis redéploie. Tes réglages, eux, n'ont pas bougé.
 | — | `input_text.zendure_solarflow4000mix_shelly_ip` | *(vide)* | IPv4 | **IP du Shelly — la seule valeur à saisir** |
 | `zendure_ip` | `input_text.zendure_solarflow4000mix_ip` | *(vide)* | IPv4 | IP de la Zendure, **trouvée et mise à jour automatiquement** |
 | `zendure_sn` | — | *(vide)* | texte | numéro de série appris au 1er contact, sert à identifier la batterie |
+| `zendure_em` | `..._em_canal` | 0 | 0–2 | **canal de la pince qui mesure l'arrivée générale** (voir étape 2) |
 | `zendure_tick` | `..._tick` | 250 ms | 100–2000 | pas de scrutation de la pince (lecture mémoire, sans réseau) |
 | `zendure_period` | `..._periode` | 1000 ms | 1–10 s | rafraîchissement de l'état Zendure en tâche de fond |
 | `zendure_gain` | `..._gain` | 0.9 | 0.1–1 | amortissement (↑ = plus réactif, risque d'oscillation) |
@@ -873,11 +900,17 @@ remplaçant `packData[3]` par `packData[4]`.
 
 ### Utiliser un Shelly en triphasé
 
+> ℹ️ Si tes trois pinces sont en **monophasé** et que tu veux simplement lire une
+> autre pince que la première, **ne touche pas au code** : règle le canal
+> `zendure_em` (voir [Référence des réglages](#référence-des-réglages)).
+> La modification ci-dessous ne concerne que le profil **triphasé**, où les
+> trois phases sont totalisées par le Shelly.
+
 Dans le script JS, remplace :
 
 ```js
 function gridPower() {
-    let s = Shelly.getComponentStatus("em1", 0);
+    let s = Shelly.getComponentStatus("em1", CFG.em);
     return (s && typeof s.act_power === "number") ? s.act_power : null;
 }
 ```
@@ -890,6 +923,10 @@ function gridPower() {
     return (s && typeof s.total_act_power === "number") ? s.total_act_power : null;
 }
 ```
+
+Pense aussi à adapter le capteur REST de `packages/zendure_solarflow4000mix_dashboard.yaml`
+(`EM1.GetStatus` → `EM.GetStatus`, `act_power` → `total_act_power`), sans quoi
+l'affichage de Home Assistant ne correspondra plus à ce qui est régulé.
 
 ⚠️ Pertinent uniquement si ton compteur d'énergie est en **compensation triphasée**.
 Sinon, il vaut mieux réguler sur la phase où la Zendure est raccordée.
@@ -937,7 +974,8 @@ sa dernière consigne.
 | Les curseurs SOC reviennent à leur ancienne valeur | la Zendure a refusé l'écriture (SOC max ≤ SOC min, ou API injoignable) | vérifie que max > min, puis les logs HA du script `set_soc` |
 | Erreur `default_entity_id` au démarrage de HA | HA trop ancien | supprime toutes les lignes `default_entity_id:` des packages |
 | Les graphiques sont vides / « Custom element not found » | `apexcharts-card` absent | installe-le via HACS et vide le cache (Ctrl+F5) |
-| Badge « Contrôle » à « — », courbe Réseau plate à 0, zéro soutirage à 0 h | `sensor.zendure_solarflow4000mix_reseau` indisponible | teste `curl http://IP_SHELLY/rpc/EM1.GetStatus?id=0` ; vérifie l'IP du Shelly dans `zendure_solarflow4000mix_dashboard.yaml` et le profil **monophasé** |
+| Badge « Contrôle » à « — », courbe Réseau plate à 0, zéro soutirage à 0 h | `sensor.zendure_solarflow4000mix_reseau` indisponible | teste `curl http://IP_SHELLY/rpc/EM1.GetStatus?id=0` ; vérifie l'IP du Shelly et le profil **monophasé** |
+| La puissance réseau ne correspond pas au compteur (reste à ~0, ou ne suit qu'un appareil) | **mauvais canal de pince** : l'arrivée générale est sur `em1:1` ou `em1:2`, pas sur `em1:0` | règle « Canal pince réseau » dans l'onglet *Réglages* ; compare les trois via `curl http://IP_SHELLY/rpc/EM1.GetStatus?id=0` (puis `1`, `2`) |
 | Le signe de la puissance réseau est inversé | pince à l'envers | retourne la pince, ou bascule `reverse` du canal : `http://IP_SHELLY/rpc/EM1.SetConfig?id=0&config={"reverse":true}` |
 | Rendement > 100 % ou aberrant | mesure pendant une phase PV | ces capteurs ne sont valides que PV < 20 W ; regarde les moyennes 7 j |
 | « Rendement charge/décharge » à *Indisponible* | aucune mesure valide depuis le démarrage de HA | normal tant que la batterie n'a pas chargé/déchargé au moins une fois à plus de 50 W sans PV ; la valeur est ensuite conservée |

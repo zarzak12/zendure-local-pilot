@@ -1434,12 +1434,16 @@ views:
               **Seuil de réveil** : consigne nécessaire pour sortir de veille
               profonde. **Délai de bascule** : temps passé à 0 W à observer le
               réseau avant d'inverser charge ↔ décharge (0 = bascule immédiate).
-              Ne change l'**IP** que si la réservation DHCP de la
+              **Canal pince réseau** : laquelle des trois pinces du Pro 3EM
+              mesure le compteur général (0, 1 ou 2) — à régler une fois, à
+              l'installation. Ne change l'**IP** que si la réservation DHCP de la
               Zendure a changé.
             visibility: *vis_help2
           - type: entities
             show_header_toggle: false
             entities:
+              - entity: input_number.zendure_solarflow4000mix_em_canal
+                name: Canal pince réseau (em1)
               - entity: input_text.zendure_solarflow4000mix_ip
                 name: Adresse IP Zendure
               - entity: input_number.zendure_solarflow4000mix_periode

@@ -32,6 +32,18 @@ input_text:
     max: 15
 
 input_number:
+  # ---- Canal de la pince qui mesure le point de livraison ----
+  # Sur un Pro 3EM en monophasé, les trois pinces sont indépendantes : selon le
+  # câblage, le compteur général peut être sur la 1re, la 2e ou la 3e.
+  # Stocké dans le KVS du Shelly (zendure_em), donc conservé d'une mise à jour
+  # du script à l'autre.
+  zendure_solarflow4000mix_em_canal:
+    name: Zendure canal pince réseau
+    icon: mdi:current-ac
+    min: 0
+    max: 2
+    step: 1
+    mode: box
   zendure_solarflow4000mix_periode:
     name: Zendure période de rafraîchissement
     icon: mdi:timer-outline
@@ -155,6 +167,9 @@ automation:
             {{ cfg.zendure_ip if cfg.zendure_ip is defined and cfg.zendure_ip
                else states('input_text.zendure_solarflow4000mix_ip') }}
       - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_em_canal}
+        data: {value: "{{ cfg.zendure_em | default(0) | float }}"}
+      - action: input_number.set_value
         target: {entity_id: input_number.zendure_solarflow4000mix_periode}
         data: {value: "{{ (cfg.zendure_period | default(1000) | float) / 1000 }}"}
       - action: input_number.set_value
@@ -185,6 +200,9 @@ automation:
       - trigger: state
         entity_id: input_text.zendure_solarflow4000mix_ip
         id: zendure_ip
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_em_canal
+        id: zendure_em
       - trigger: state
         entity_id: input_number.zendure_solarflow4000mix_periode
         id: zendure_period

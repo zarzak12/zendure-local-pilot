@@ -59,9 +59,32 @@ if [ -z "$PREFIXE" ]; then
   if [ -n "$PROFIL" ] && [ "$PROFIL" != "monophase" ]; then
     echo
     echo "ATTENTION : ce Shelly est en profil '$PROFIL'."
-    echo "Ce projet attend le profil monophase (pince sur em1:0)."
+    echo "Ce projet attend le profil monophase (une pince par canal em1)."
     echo "Voir la section « Utiliser un Shelly en triphase » du README."
   fi
+
+  # ---- Quelle pince mesure le compteur general ? ----
+  # Les trois pinces sont independantes : selon le cablage, le point de
+  # livraison peut etre sur n'importe laquelle. Plutot que de supposer la 0,
+  # on affiche les trois pour que l'utilisateur reconnaisse la sienne.
+  echo
+  echo "Pinces du Shelly (canaux em1) :"
+  for C in 0 1 2; do
+    EM=$(curl -s --max-time 5 "http://$IP/rpc/EM1.GetStatus?id=$C" || true)
+    case "$EM" in
+      *act_power*)
+        P=$(printf '%s' "$EM" | sed -n 's/.*"act_power":\([-0-9.]*\).*/\1/p')
+        V=$(printf '%s' "$EM" | sed -n 's/.*"voltage":\([-0-9.]*\).*/\1/p')
+        MARQUE=$(awk -v p="$P" 'BEGIN { if (p < 0) p = -p; if (p >= 5) print "  <- du courant circule" }')
+        printf '  em1:%s  %9.1f W   %5.0f V%s\n' "$C" "$P" "$V" "$MARQUE"
+        ;;
+      *) echo "  em1:$C  absent (profil triphase ?)" ;;
+    esac
+  done
+  echo
+  echo "Choisis le canal dont la puissance correspond a ta consommation totale."
+  echo "Il se regle dans Home Assistant : onglet Reglages -> « Canal pince reseau »."
+  echo "(une puissance proche de 0 ne prouve rien : maison a l'arret, ou production = consommation)"
 else
   echo "Prefixe impose : $PREFIXE"
 fi

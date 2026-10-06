@@ -65,9 +65,39 @@ if ($Prefixe -eq "") {
   if ($info.profile -and $info.profile -ne "monophase") {
     Write-Host ""
     Write-Host "ATTENTION : ce Shelly est en profil '$($info.profile)'." -ForegroundColor Yellow
-    Write-Host "Ce projet attend le profil monophase (pince sur em1:0)."
+    Write-Host "Ce projet attend le profil monophase (une pince par canal em1)."
     Write-Host "Voir la section « Utiliser un Shelly en triphase » du README."
   }
+
+  # ---- Quelle pince mesure le compteur general ? ----
+  # Les trois pinces sont independantes : selon le cablage, le point de
+  # livraison peut etre sur n'importe laquelle. Plutot que de supposer la 0,
+  # on affiche les trois pour que l'utilisateur reconnaisse la sienne.
+  Write-Host ""
+  Write-Host "Pinces du Shelly (canaux em1) :"
+  $actifs = @()
+  foreach ($c in 0, 1, 2) {
+    try {
+      $r = Invoke-WebRequest -Uri "http://$Ip/rpc/EM1.GetStatus?id=$c" `
+                             -TimeoutSec 5 -UseBasicParsing
+      $em = [Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray()) | ConvertFrom-Json
+      $p  = [double]$em.act_power
+      $v  = [double]$em.voltage
+      $marque = if ([Math]::Abs($p) -ge 5) { "  <- du courant circule"; } else { "" }
+      if ([Math]::Abs($p) -ge 5) { $actifs += $c }
+      Write-Host ("  em1:{0}  {1,9:N1} W   {2,5:N0} V{3}" -f $c, $p, $v, $marque)
+    } catch {
+      Write-Host ("  em1:{0}  absent (profil triphase ?)" -f $c)
+    }
+  }
+  Write-Host ""
+  if ($actifs.Count -eq 1) {
+    Write-Host "Une seule pince mesure du courant : le canal est probablement $($actifs[0])." -ForegroundColor Green
+  } else {
+    Write-Host "Choisis le canal dont la puissance correspond a ta consommation totale."
+  }
+  Write-Host "Il se regle dans Home Assistant : onglet Reglages -> « Canal pince reseau »."
+  Write-Host "(une puissance proche de 0 ne prouve rien : maison a l'arret, ou production = consommation)"
 } else {
   Write-Host "Prefixe impose : $Prefixe"
 }
