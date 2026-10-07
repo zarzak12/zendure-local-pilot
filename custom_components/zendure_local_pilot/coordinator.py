@@ -21,6 +21,9 @@ from .zendure import ClientZendure, ErreurZendure
 
 _LOGGER = logging.getLogger(__name__)
 
+# Script du Shelly arrêté depuis ce délai : batterie remise à 0 W.
+DELAI_REPLI_S = 30
+
 
 @dataclass
 class Donnees:
@@ -109,6 +112,46 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         self._id_script: int | None = None
         self.memoire = Memoire()
         self._store: Store = Store(hass, 1, f"{DOMAIN}.{entree.entry_id}")
+        self._script_arrete_depuis: float | None = None
+        self._repli_fait = False
+
+    async def _repli_si_script_arrete(self, donnees: Donnees, maintenant: float) -> None:
+        """Remet la batterie à 0 W si le script du Shelly est arrêté depuis 30 s.
+
+        La batterie n'a aucun chien de garde : script arrêté (plantage, mise à
+        jour du firmware, « Run on startup » oublié), elle garde sa dernière
+        consigne indéfiniment, 3000 W de décharge injectés compris. C'est le
+        filet de l'automatisation de la version YAML. Il ne couvre pas le
+        script vivant mais muet : celui-là, le script le couvre lui-même.
+        """
+        if donnees.script is None:
+            # État du script inconnu (Shelly qui n'a pas répondu à cet appel) :
+            # ne rien conclure, comme le capteur YAML devenu indisponible.
+            return
+        if donnees.script_actif:
+            self._script_arrete_depuis = None
+            self._repli_fait = False
+            return
+        if self._script_arrete_depuis is None:
+            self._script_arrete_depuis = maintenant
+        if self._repli_fait or maintenant - self._script_arrete_depuis < DELAI_REPLI_S:
+            return
+        if not donnees.batterie_joignable or not donnees.sn:
+            return   # réessayé au relevé suivant
+        p = donnees.proprietes
+        if not p.get("outputLimit") and not p.get("inputLimit"):
+            self._repli_fait = True   # déjà au repos : rien à corriger
+            return
+        try:
+            await self.zendure.ecrire(
+                donnees.sn, {"smartMode": 1, "outputLimit": 0, "inputLimit": 0})
+        except ErreurZendure as err:
+            _LOGGER.warning("script du Shelly arrêté : remise à 0 W impossible (%s)", err)
+            return
+        self._repli_fait = True
+        _LOGGER.warning(
+            "script de régulation du Shelly arrêté depuis %d s : batterie remise à 0 W",
+            DELAI_REPLI_S)
 
     # -- mémoire (compteurs, statistiques, santé) ----------------------------
 
@@ -187,6 +230,8 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
                 _LOGGER.debug("batterie injoignable : %s", err)
         else:
             donnees.erreur_batterie = "adresse de la batterie pas encore découverte"
+
+        await self._repli_si_script_arrete(donnees, dt_util.now().timestamp())
 
         self.memoire.mettre_a_jour(donnees, dt_util.now())
         donnees.memoire = self.memoire

@@ -591,6 +591,56 @@ def test_ecriture_persistante_retablit_smartmode():
     assert veilles == [2], "la batterie a besoin d'un délai avant le rétablissement"
 
 
+def test_repli_a_zero_si_le_script_s_arrete():
+    """Équivalent de l'automatisation YAML : script arrêté 30 s -> 0 W."""
+    import asyncio
+
+    class FauxZendure:
+        def __init__(self):
+            self.ecritures = []
+
+        async def ecrire(self, sn, props):
+            self.ecritures.append((sn, props))
+
+    coord = types.SimpleNamespace(zendure=FauxZendure(), _script_arrete_depuis=None,
+                                  _repli_fait=False)
+    repli = coordinator.CoordinateurZendure._repli_si_script_arrete
+
+    def releve(running, sortie=1500):
+        d = _donnees({**RAPPORT_REEL, "properties": {**RAPPORT_REEL["properties"],
+                                                     "outputLimit": sortie, "inputLimit": 0}})
+        d.script = {"running": running}
+        return d
+
+    for t in (0, 10, 29):   # pas avant 30 s
+        asyncio.run(repli(coord, releve(False), t))
+    assert coord.zendure.ecritures == []
+    asyncio.run(repli(coord, releve(False), 31))
+    assert coord.zendure.ecritures == [
+        ("EEE3NDP6P250210", {"smartMode": 1, "outputLimit": 0, "inputLimit": 0})]
+    asyncio.run(repli(coord, releve(False), 60))   # une seule fois par arrêt
+    assert len(coord.zendure.ecritures) == 1
+    # Le script repart puis s'arrête de nouveau : nouveau repli
+    asyncio.run(repli(coord, releve(True), 70))
+    asyncio.run(repli(coord, releve(False), 80))
+    asyncio.run(repli(coord, releve(False), 111))
+    assert len(coord.zendure.ecritures) == 2
+    # État du script inconnu : on ne conclut rien
+    coord2 = types.SimpleNamespace(zendure=FauxZendure(), _script_arrete_depuis=None,
+                                   _repli_fait=False)
+    inconnu = releve(False)
+    inconnu.script = None
+    for t in (0, 100):
+        asyncio.run(repli(coord2, inconnu, t))
+    assert coord2.zendure.ecritures == []
+    # Batterie déjà au repos : aucune écriture inutile
+    coord3 = types.SimpleNamespace(zendure=FauxZendure(), _script_arrete_depuis=None,
+                                   _repli_fait=False)
+    for t in (0, 40):
+        asyncio.run(repli(coord3, releve(False, sortie=0), t))
+    assert coord3.zendure.ecritures == []
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     echecs = 0

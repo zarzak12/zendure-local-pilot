@@ -194,8 +194,12 @@ tu sais ce que tu fais.
 
 **Arrêter la régulation remet la batterie au repos.** Sans cela, elle
 conserverait sa dernière consigne et continuerait d'injecter ou de tirer
-indéfiniment. C'est le même repli de sécurité que l'automatisation de la
-version YAML.
+indéfiniment.
+
+**Un script du Shelly arrêté depuis 30 s remet aussi la batterie à 0 W**,
+même sans action de ta part (plantage, mise à jour du firmware, « Run on
+startup » oublié). C'est le repli de sécurité de l'automatisation de la
+version YAML ; il est signalé dans le journal.
 
 **Une batterie muette ne fait pas tout disparaître.** Les entités issues du
 Shelly restent lisibles et modifiables : c'est justement le moment où l'on
