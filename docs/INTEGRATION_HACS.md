@@ -102,15 +102,20 @@ devient `number.zendure_solarflow4000mix_soc_min_consigne`. Leur historique
 n'est pas récupérable — c'est l'historique d'un curseur de réglage, sans grand
 intérêt, mais autant le dire franchement.
 
-En revanche, les mesures reprises par l'intégration (SOC, puissances,
-températures, réseau, état des packs…) conservent leur identifiant et leur
-historique.
+En revanche, **toutes les mesures** de la version YAML (SOC, puissances,
+températures, réseau, énergies, rendements, santé des packs, statistiques du
+jour…) conservent leur identifiant et leur historique.
 
-⚠️ **Toutes ne sont pas encore reprises** (voir
-[Limites connues](#limites-connues)) : compteurs d'énergie, rendements,
-santé des packs, calibration, statistiques du jour. Retirer les packages les
-fait disparaître ; leur historique reste consultable mais n'avance plus. Si
-tu y tiens, garde pour l'instant la version YAML.
+**Les compteurs reprennent là où ils en étaient.** À la première
+installation, l'intégration lit la dernière valeur des compteurs d'énergie,
+des capacités mesurées des packs (et de leurs repères), des rendements et de
+la date de calibration, dans l'état courant ou à défaut dans l'historique.
+Sans cela, un compteur d'énergie repartirait de zéro et le tableau Énergie
+verrait une chute de plusieurs centaines de kWh. La santé des packs n'a pas
+non plus à être réapprise. Les valeurs reprises sont listées dans le journal.
+
+Seule exception : les compteurs **du jour** (PV du jour, commutations, temps
+en zéro soutirage) repartent de zéro le jour de la migration.
 
 Pense à mettre à jour tes automatisations qui référençaient ces aides, et à
 remplacer les appels `script.zendure_solarflow4000mix_set_power` par le
@@ -120,12 +125,26 @@ service `zendure_local_pilot.set_power`.
 
 ### Mesures
 
-SOC, puissance au point de livraison (lue sur la pince que suit la
-régulation), puissances d'entrée et de sortie, puissance et état de la
-batterie, production photovoltaïque, tensions, températures, butée SOC,
-détail par pack, estimations d'énergie disponible et requise, état des
-liaisons. Une partie seulement de la version YAML, voir
-[Limites connues](#limites-connues).
+Toutes celles de la version YAML : SOC, puissance au point de livraison (lue
+sur la pince que suit la régulation), puissances d'entrée et de sortie,
+répartition du PV, puissance et état de la batterie, côté DC des packs,
+tensions, températures, butée SOC, détail par pack, énergies disponible et
+requise, temps de charge restant.
+
+S'y ajoutent les grandeurs **à mémoire**, conservées d'un redémarrage à
+l'autre :
+
+| Famille | Entités |
+|---|---|
+| Énergie | `energie_chargee`, `energie_dechargee`, `energie_pv`, `pv_jour`, `pack_N_energie_dc` |
+| Rendements | `rendement_global`, `rendement_charge`, `rendement_decharge`, `efficacite_*` (instantané et moyenne 7 jours) |
+| Santé des packs | `pack_N_capacite_estimee`, `pack_N_sante`, `sante_min`, `mesure_sante_progression` |
+| Statistiques du jour | `commutations_charge_jour`, `commutations_decharge_jour`, `commutations_jour`, `zero_soutirage_jour` |
+| Calibration | `calibration`, `derniere_calibration`, `jours_depuis_calibration` |
+
+La santé est estimée comme dans la version YAML : énergie DC échangée
+rapportée à au moins 25 points de SOC, filtre de plausibilité (40 à 130 % du
+nominal), lissage 70/30. Voir le [README](../README.md#état-de-santé-des-batteries).
 
 Les entités portent le modèle réel dans leur **nom affiché** (« Zendure
 SolarFlow 2400 AC+ SOC »), mais leur **identifiant reste
@@ -155,6 +174,7 @@ que tu fais.
 | `zendure_local_pilot.set_soc` | Bornes de charge, échelle du firmware détectée |
 | `zendure_local_pilot.write_properties` | Écriture brute de propriétés zenSDK |
 | `zendure_local_pilot.redeploy_script` | Redéploiement du script du Shelly, sans troncature |
+| `zendure_local_pilot.reset_health` | Réinitialise l'estimation de santé des packs |
 
 ## Deux comportements à connaître
 
@@ -171,16 +191,10 @@ deviennent indisponibles.
 ## Limites connues
 
 - Non testée sur une installation réelle à ce jour.
-- **Pas encore portées** depuis la version YAML :
-  - compteurs d'énergie : `energie_chargee`, `energie_dechargee`,
-    `energie_pv`, `pv_jour`, `pack_N_energie_dc` ;
-  - rendements : `rendement_*`, `efficacite_*` ;
-  - santé des packs : `pack_N_sante`, `pack_N_capacite_estimee`,
-    `sante_min`, `mesure_sante_progression` ;
-  - flux et diagnostics dérivés : `pv_vers_batterie`, `pv_vers_maison`,
-    `passthrough_pv`, `charge_dc`, `decharge_dc`, `stockage`,
-    `temps_charge_restant`, `calibration`, `derniere_calibration`,
-    `jours_depuis_calibration`, `commutations_*`, `zero_soutirage_jour`.
+- Les compteurs d'énergie sont calculés à partir des relevés toutes les 5 s
+  et sauvegardés toutes les minutes : une coupure brutale de Home Assistant
+  perd au plus une minute de cumul. Un trou de plus de 2 minutes (HA arrêté,
+  batterie muette) n'est pas intégré plutôt que d'inventer de l'énergie.
 - **Le tableau de bord du dépôt ne fonctionne pas encore avec
   l'intégration** : il vise les aides `input_number.*` et les entités du
   Shelly préfixées `SHELLY_ID`, alors que l'intégration expose des `number.*`

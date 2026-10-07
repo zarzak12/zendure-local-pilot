@@ -143,8 +143,17 @@
         }
       }
     },
-    "redeploy_script": {
-      "name": "Redéployer le script du Shelly",
+    "reset_health": {
+      "name": "Réinitialiser l'estimation de santé",
+      "description": "Efface les capacités mesurées des packs et leurs repères. La mesure repart au prochain cycle d'au moins 25 points de SOC.",
+      "fields": {
+        "entry_id": {
+          "name": "Installation",
+          "description": "À préciser seulement si plusieurs batteries sont configurées."
+        }
+      }
+    },
+    "redeploy_script": {      "name": "Redéployer le script du Shelly",
       "description": "Réécrit le script de régulation à partir d'un fichier local, par morceaux, puis le relit en entier et le compare. L'éditeur web du Shelly tronque silencieusement les scripts volumineux ; ce service ne le fait pas.",
       "fields": {
         "chemin": {

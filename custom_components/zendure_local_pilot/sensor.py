@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -31,12 +32,18 @@ from .calculs import (
     capacite_pack,
     capacite_totale,
     echelle_soc,
+    efficacite_charge,
+    efficacite_decharge,
     nom_modele,
     puissance_batterie_nette,
+    puissance_dc_packs,
+    pv_vers_batterie,
+    pv_vers_maison,
 )
 from .const import CONF_NB_PACKS, DEFAUT_NB_PACKS, DOMAIN
 from .coordinator import CoordinateurZendure, Donnees
 from .entity import EntiteZendure
+from .memoire import NB_PACKS_MAX, Memoire
 
 MESURE = SensorStateClass.MEASUREMENT
 
@@ -80,6 +87,42 @@ def _direct(suffixe: str, nom: str, propriete: str, **kwargs) -> DescriptionCapt
 
 _W = {"native_unit_of_measurement": UnitOfPower.WATT,
       "device_class": SensorDeviceClass.POWER, "state_class": MESURE}
+
+
+def _memo(suffixe: str, nom: str, lire: Callable[[Memoire], Any], **kwargs) -> DescriptionCapteur:
+    """Capteur lu dans la mémoire ; indisponible tant qu'il n'a pas de valeur."""
+    return DescriptionCapteur(
+        key=suffixe, name=nom,
+        valeur=lambda d: lire(d.memoire),
+        present=lambda d: d.memoire is not None and lire(d.memoire) is not None,
+        **kwargs,
+    )
+
+
+def _cumul(suffixe: str, nom: str, lire: Callable[[Memoire], float], **kwargs) -> DescriptionCapteur:
+    """Compteur d'énergie en kWh. « total » comme la version YAML, dont il
+    reprend la valeur : les statistiques long terme se poursuivent sans saut."""
+    options = {"native_unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+               "device_class": SensorDeviceClass.ENERGY,
+               "state_class": SensorStateClass.TOTAL, **kwargs}
+    return _memo(suffixe, nom, lambda m: round(lire(m), 3), **options)
+
+
+def _energie_requise(d: Donnees) -> float:
+    return round(
+        max(_i(d.proprietes, "socSet") / echelle_soc(d.proprietes)
+            - _i(d.proprietes, "electricLevel"), 0)
+        * capacite_totale(d.packs) / 100, 2)
+
+
+def _santes(d: Donnees) -> list[float]:
+    """Santé estimée de chaque pack présent et déjà mesuré."""
+    valeurs = []
+    for i, pk in enumerate(d.packs[:NB_PACKS_MAX]):
+        s = d.memoire.sante(i, capacite_pack(pk.get("sn"), pk.get("packType")))
+        if s is not None:
+            valeurs.append(s)
+    return valeurs
 
 CAPTEURS: tuple[DescriptionCapteur, ...] = (
     DescriptionCapteur(
@@ -239,11 +282,107 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
         key="energie_requise", name="énergie requise",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
-        valeur=lambda d: round(
-            max(_i(d.proprietes, "socSet") / echelle_soc(d.proprietes)
-                - _i(d.proprietes, "electricLevel"), 0)
-            * capacite_totale(d.packs) / 100, 2),
+        valeur=_energie_requise,
         present=lambda d: bool(d.packs),
+    ),
+    DescriptionCapteur(
+        key="temps_charge_restant", name="temps de charge restant",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        valeur=lambda d: round(_energie_requise(d) * 1000
+                               / -puissance_batterie_nette(d.proprietes) * 60),
+        present=lambda d: bool(d.packs) and -puissance_batterie_nette(d.proprietes) > 20,
+    ),
+    # ---- Photovoltaïque : répartition ----
+    DescriptionCapteur(
+        key="pv_vers_batterie", name="PV vers batterie", **_W,
+        valeur=lambda d: pv_vers_batterie(d.proprietes),
+    ),
+    DescriptionCapteur(
+        key="pv_vers_maison", name="PV vers maison", **_W,
+        valeur=lambda d: pv_vers_maison(d.proprietes),
+    ),
+    DescriptionCapteur(
+        key="passthrough_pv", name="passthrough PV", icon="mdi:solar-power",
+        valeur=lambda d: "PV inactif" if _i(d.proprietes, "solarInputPower") == 0
+        else {0: "Vers batterie", 2: "Vers maison"}.get(_i(d.proprietes, "pass", -1), "Inconnu"),
+    ),
+    # ---- Côté DC des packs ----
+    DescriptionCapteur(
+        key="charge_dc", name="charge DC", **_W,
+        valeur=lambda d: puissance_dc_packs(d.packs, 1),
+    ),
+    DescriptionCapteur(
+        key="decharge_dc", name="décharge DC", **_W,
+        valeur=lambda d: puissance_dc_packs(d.packs, 2),
+    ),
+    # ---- Rendements instantanés, mesurables seulement sans PV ----
+    DescriptionCapteur(
+        key="efficacite_charge", name="efficacité charge",
+        native_unit_of_measurement=PERCENTAGE, state_class=MESURE,
+        valeur=lambda d: efficacite_charge(d.proprietes, d.packs),
+        present=lambda d: efficacite_charge(d.proprietes, d.packs) is not None,
+    ),
+    DescriptionCapteur(
+        key="efficacite_decharge", name="efficacité décharge",
+        native_unit_of_measurement=PERCENTAGE, state_class=MESURE,
+        valeur=lambda d: efficacite_decharge(d.proprietes, d.packs),
+        present=lambda d: efficacite_decharge(d.proprietes, d.packs) is not None,
+    ),
+    # ---- Divers ----
+    DescriptionCapteur(
+        key="calibration", name="calibration", icon="mdi:battery-sync-outline",
+        valeur=lambda d: "En cours" if _i(d.proprietes, "socStatus") == 1 else "Non",
+    ),
+    DescriptionCapteur(
+        key="stockage", name="stockage", icon="mdi:memory",
+        valeur=lambda d: "RAM" if _i(d.proprietes, "smartMode") == 1 else "Flash",
+    ),
+    # ---- Grandeurs à mémoire (voir memoire.py) ----
+    _cumul("energie_chargee", "énergie chargée", lambda m: m.energie_chargee),
+    _cumul("energie_dechargee", "énergie déchargée", lambda m: m.energie_dechargee),
+    _cumul("energie_pv", "énergie PV", lambda m: m.energie_pv),
+    _cumul("pv_jour", "PV jour", lambda m: m.pv_jour,
+           state_class=SensorStateClass.TOTAL_INCREASING),
+    _memo("rendement_global", "rendement global", lambda m: m.rendement_global,
+          native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-sync"),
+    _memo("rendement_charge", "rendement charge", lambda m: m.rendement_charge,
+          native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-plus-variant"),
+    _memo("rendement_decharge", "rendement décharge", lambda m: m.rendement_decharge,
+          native_unit_of_measurement=PERCENTAGE, icon="mdi:battery-minus-variant"),
+    _memo("efficacite_charge_24h", "efficacité charge 7 j", lambda m: m.efficacite_charge_7j,
+          native_unit_of_measurement=PERCENTAGE, state_class=MESURE),
+    _memo("efficacite_decharge_24h", "efficacité décharge 7 j", lambda m: m.efficacite_decharge_7j,
+          native_unit_of_measurement=PERCENTAGE, state_class=MESURE),
+    _memo("commutations_charge_jour", "commutations charge jour",
+          lambda m: m.commutations_charge, state_class=MESURE, icon="mdi:swap-vertical-bold"),
+    _memo("commutations_decharge_jour", "commutations décharge jour",
+          lambda m: m.commutations_decharge, state_class=MESURE, icon="mdi:swap-vertical-bold"),
+    _memo("commutations_jour", "commutations jour",
+          lambda m: m.commutations_charge + m.commutations_decharge,
+          state_class=MESURE, icon="mdi:swap-vertical-bold"),
+    _memo("zero_soutirage_jour", "zéro soutirage jour",
+          lambda m: round(m.zero_soutirage_s / 3600, 2),
+          native_unit_of_measurement=UnitOfTime.HOURS, device_class=SensorDeviceClass.DURATION,
+          state_class=MESURE, shelly=True),
+    _memo("derniere_calibration", "dernière calibration",
+          lambda m: datetime.fromisoformat(m.derniere_calibration) if m.derniere_calibration else None,
+          device_class=SensorDeviceClass.TIMESTAMP, icon="mdi:battery-check"),
+    _memo("jours_depuis_calibration", "jours depuis calibration",
+          lambda m: m.jours_depuis_calibration(datetime.now(timezone.utc)),
+          native_unit_of_measurement="j", icon="mdi:calendar-clock"),
+    # ---- Santé des packs ----
+    DescriptionCapteur(
+        key="sante_min", name="santé minimale", icon="mdi:battery-heart-variant",
+        native_unit_of_measurement=PERCENTAGE, state_class=MESURE,
+        valeur=lambda d: min(_santes(d)),
+        present=lambda d: d.memoire is not None and bool(_santes(d)),
+    ),
+    DescriptionCapteur(
+        key="mesure_sante_progression", name="mesure santé progression",
+        native_unit_of_measurement=PERCENTAGE, icon="mdi:progress-helper",
+        valeur=lambda d: d.memoire.progression_sante(d.packs),
+        present=lambda d: d.memoire is not None,
     ),
 )
 
@@ -313,6 +452,32 @@ def _capteurs_pack(n: int) -> tuple[DescriptionCapteur, ...]:
             device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
             valeur=lambda d: capacite_pack(pack(d).get("sn"), pack(d).get("packType")),
             present=present,
+        ),
+        # Énergie DC nette échangée : monte en charge, descend en décharge.
+        DescriptionCapteur(
+            key=f"pack_{n}_energie_dc", name=f"pack {n} énergie DC",
+            native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+            device_class=SensorDeviceClass.ENERGY, state_class=SensorStateClass.TOTAL,
+            valeur=lambda d: round(d.memoire.packs[i]["energie_dc"], 2),
+            present=lambda d: present(d) and d.memoire is not None,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_capacite_estimee", name=f"pack {n} capacité estimée",
+            native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+            device_class=SensorDeviceClass.ENERGY_STORAGE, state_class=MESURE,
+            icon="mdi:battery-heart-variant",
+            valeur=lambda d: round(d.memoire.packs[i]["capacite"]),
+            present=lambda d: present(d) and d.memoire is not None
+            and d.memoire.packs[i]["capacite"] > 0,
+        ),
+        DescriptionCapteur(
+            key=f"pack_{n}_sante", name=f"pack {n} santé",
+            native_unit_of_measurement=PERCENTAGE, state_class=MESURE,
+            icon="mdi:battery-heart-variant",
+            valeur=lambda d: d.memoire.sante(
+                i, capacite_pack(pack(d).get("sn"), pack(d).get("packType"))),
+            present=lambda d: present(d) and d.memoire is not None and d.memoire.sante(
+                i, capacite_pack(pack(d).get("sn"), pack(d).get("packType"))) is not None,
         ),
     )
 

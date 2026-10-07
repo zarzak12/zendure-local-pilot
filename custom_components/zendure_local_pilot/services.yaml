@@ -50,6 +50,12 @@ write_properties:
       selector:
         text:
 
+reset_health:
+  fields:
+    entry_id:
+      selector:
+        text:
+
 redeploy_script:
   fields:
     chemin:

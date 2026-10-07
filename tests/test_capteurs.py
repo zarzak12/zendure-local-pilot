@@ -83,6 +83,10 @@ def _prepare_doublures():
             CoordinatorEntity=_Souscriptible,
             UpdateFailed=type("UpdateFailed", (Exception,), {}))
     _module("homeassistant.helpers.device_registry", DeviceInfo=dict)
+    _module("homeassistant.helpers.storage", Store=object)
+    _module("homeassistant.util")
+    sys.modules["homeassistant.util"].__path__ = []
+    _module("homeassistant.util.dt", now=None)
     _module("homeassistant.helpers.entity_platform",
             AddEntitiesCallback=object)
     _module("homeassistant.components")
@@ -139,7 +143,7 @@ def _charge(nom: str):
     return module
 
 
-for _nom in ("const", "calculs", "zendure", "shelly", "coordinator", "entity"):
+for _nom in ("const", "calculs", "memoire", "zendure", "shelly", "coordinator", "entity"):
     _charge(_nom)
 _module("voluptuous", Schema=lambda *a, **k: None, Required=lambda *a, **k: a[0],
         Optional=lambda *a, **k: a[0], Coerce=lambda *a: None, All=lambda *a: None,

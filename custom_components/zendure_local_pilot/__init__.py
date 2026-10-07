@@ -44,6 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry, data={**entry.data, CONF_MIGRER: False})
 
     coordinateur = CoordinateurZendure(hass, entry)
+    await coordinateur.async_charger_memoire()
     await coordinateur.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinateur
@@ -62,7 +63,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Décharge une installation."""
     decharge = await hass.config_entries.async_unload_platforms(entry, PLATEFORMES)
     if decharge:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        coordinateur = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if coordinateur is not None:
+            # Les cumuls ne sont sinon écrits qu'en différé : un rechargement
+            # perdrait la dernière minute.
+            await coordinateur.async_sauver_memoire()
         retirer_services(hass)
     return decharge
 

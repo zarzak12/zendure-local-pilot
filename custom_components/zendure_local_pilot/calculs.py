@@ -102,6 +102,46 @@ def puissance_batterie_nette(proprietes: dict[str, Any]) -> int:
     return i("packInputPower") - i("outputPackPower")
 
 
+def _entier(source: dict[str, Any], cle: str) -> int:
+    try:
+        return int(source.get(cle, 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def puissance_dc_packs(packs: list[dict[str, Any]], etat: int) -> int:
+    """Puissance DC des packs dans un état donné (1 = charge, 2 = décharge)."""
+    return sum(_entier(p, "power") for p in packs if _entier(p, "state") == etat)
+
+
+def efficacite_charge(p: dict[str, Any], packs: list[dict[str, Any]]) -> float | None:
+    """DC réellement stocké ÷ AC pris au réseau, en %. Hors PV seulement.
+
+    Avec du PV, l'énergie qui entre dans les packs ne vient plus seulement du
+    réseau et le rapport n'aurait plus de sens.
+    """
+    entree = _entier(p, "gridInputPower")
+    if entree <= 50 or _entier(p, "solarInputPower") >= 20:
+        return None
+    return round(min(puissance_dc_packs(packs, 1) / entree * 100, 100), 1)
+
+
+def efficacite_decharge(p: dict[str, Any], packs: list[dict[str, Any]]) -> float | None:
+    """AC rendu à la maison ÷ DC tiré des packs, en %. Hors PV seulement."""
+    dc = puissance_dc_packs(packs, 2)
+    if dc <= 50 or _entier(p, "solarInputPower") >= 20:
+        return None
+    return round(min(_entier(p, "outputHomePower") / dc * 100, 100), 1)
+
+
+def pv_vers_batterie(p: dict[str, Any]) -> int:
+    return min(_entier(p, "solarInputPower"), _entier(p, "outputPackPower"))
+
+
+def pv_vers_maison(p: dict[str, Any]) -> int:
+    return _entier(p, "solarInputPower") - pv_vers_batterie(p)
+
+
 def capacite_totale(packs: list[dict[str, Any]]) -> float:
     """Somme des capacités nominales des packs présents, en kWh."""
     return round(

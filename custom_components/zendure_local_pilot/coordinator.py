@@ -10,9 +10,12 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .const import CONF_EM_CANAL, CONF_SHELLY_HOST, DOMAIN, INTERVALLE_SONDAGE
+from .const import CONF_EM_CANAL, CONF_SHELLY_HOST, DOMAIN, INTERVALLE_SONDAGE, PREFIXE
+from .memoire import NB_PACKS_MAX, Memoire
 from .shelly import ClientShelly, ErreurShelly
 from .zendure import ClientZendure, ErreurZendure
 
@@ -28,6 +31,7 @@ class Donnees:
     shelly: dict[str, Any] = field(default_factory=dict)
     kvs: dict[str, Any] = field(default_factory=dict)
     script: dict[str, Any] | None = None
+    memoire: Memoire | None = None
 
     @property
     def proprietes(self) -> dict[str, Any]:
@@ -103,6 +107,27 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
             session, entree.options.get(CONF_SHELLY_HOST, entree.data[CONF_SHELLY_HOST]))
         self.zendure = ClientZendure(session, "")
         self._id_script: int | None = None
+        self.memoire = Memoire()
+        self._store: Store = Store(hass, 1, f"{DOMAIN}.{entree.entry_id}")
+
+    # -- mémoire (compteurs, statistiques, santé) ----------------------------
+
+    async def async_charger_memoire(self) -> None:
+        """Recharge la mémoire ; à la première installation, reprend le YAML."""
+        self.memoire = Memoire.depuis_dict(await self._store.async_load())
+        if not self.memoire.amorcee:
+            reprises = self.memoire.amorcer(await _anciennes_valeurs(self.hass))
+            if reprises:
+                _LOGGER.info("valeurs reprises de la version YAML : %s", ", ".join(reprises))
+            await self._store.async_save(self.memoire.en_dict())
+
+    async def async_sauver_memoire(self) -> None:
+        await self._store.async_save(self.memoire.en_dict())
+
+    def reinitialiser_sante(self) -> None:
+        self.memoire.reinitialiser_sante()
+        self._store.async_delay_save(self.memoire.en_dict, 1)
+        self.async_update_listeners()
 
     @property
     def id_script(self) -> int | None:
@@ -163,6 +188,11 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         else:
             donnees.erreur_batterie = "adresse de la batterie pas encore découverte"
 
+        self.memoire.mettre_a_jour(donnees, dt_util.now())
+        donnees.memoire = self.memoire
+        # Sauvegarde différée : écrire sur disque toutes les 5 s userait la
+        # carte SD pour rien. Au pire, une coupure perd une minute de cumul.
+        self._store.async_delay_save(self.memoire.en_dict, 60)
         return donnees
 
     async def ecrire_batterie(self, proprietes: dict[str, Any]) -> None:
@@ -192,4 +222,49 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
     async def ecrire_kvs(self, cle: str, valeur: Any) -> None:
         await self.shelly.kvs_ecrire(cle, valeur)
         await self.async_request_refresh()
+
+
+# Dernières valeurs de la version YAML, par grandeur de la mémoire.
+def _sources_yaml() -> dict[str, str]:
+    sources = {
+        "energie_chargee": f"sensor.{PREFIXE}_energie_chargee",
+        "energie_dechargee": f"sensor.{PREFIXE}_energie_dechargee",
+        "energie_pv": f"sensor.{PREFIXE}_energie_pv",
+        "rendement_charge": f"sensor.{PREFIXE}_rendement_charge",
+        "rendement_decharge": f"sensor.{PREFIXE}_rendement_decharge",
+        "derniere_calibration": f"sensor.{PREFIXE}_derniere_calibration",
+    }
+    for n in range(1, NB_PACKS_MAX + 1):
+        sources[f"pack_{n}_energie_dc"] = f"sensor.{PREFIXE}_pack_{n}_energie_dc"
+        sources[f"pack_{n}_capacite"] = f"input_number.{PREFIXE}_pack_{n}_capacite_estimee"
+        sources[f"pack_{n}_ancre_soc"] = f"input_number.{PREFIXE}_pack_{n}_soh_ancre_soc"
+        sources[f"pack_{n}_ancre_energie"] = f"input_number.{PREFIXE}_pack_{n}_soh_ancre_energie"
+    return sources
+
+
+async def _anciennes_valeurs(hass: HomeAssistant) -> dict[str, Any]:
+    """État courant si les packages sont encore chargés, sinon l'enregistreur."""
+    valeurs: dict[str, Any] = {}
+    manquantes: dict[str, str] = {}
+    for cle, entite in _sources_yaml().items():
+        etat = hass.states.get(entite)
+        if etat and etat.state not in ("unknown", "unavailable", ""):
+            valeurs[cle] = etat.state
+        else:
+            manquantes[cle] = entite
+    if not manquantes or "recorder" not in hass.config.components:
+        return valeurs
+    try:
+        from homeassistant.components.recorder import get_instance, history
+
+        for cle, entite in manquantes.items():
+            derniers = await get_instance(hass).async_add_executor_job(
+                history.get_last_state_changes, hass, 1, entite)
+            for etat in derniers.get(entite, []):
+                if etat.state not in ("unknown", "unavailable", ""):
+                    valeurs[cle] = etat.state
+    except Exception as err:  # noqa: BLE001
+        # La reprise est un confort : son échec ne doit pas bloquer l'installation.
+        _LOGGER.warning("reprise des valeurs YAML impossible : %s", err)
+    return valeurs
 

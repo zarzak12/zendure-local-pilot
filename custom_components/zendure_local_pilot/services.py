@@ -25,6 +25,7 @@ SERVICE_PLAFONDS = "set_limits"
 SERVICE_SOC = "set_soc"
 SERVICE_ECRIRE = "write_properties"
 SERVICE_REDEPLOYER = "redeploy_script"
+SERVICE_RESET_SANTE = "reset_health"
 
 _BASE = {vol.Optional("entry_id"): cv.string}
 
@@ -49,6 +50,8 @@ SCHEMA_ECRIRE = vol.Schema({
     **_BASE,
     vol.Required("properties"): dict,
 })
+
+SCHEMA_RESET_SANTE = vol.Schema({**_BASE})
 
 SCHEMA_REDEPLOYER = vol.Schema({
     **_BASE,
@@ -177,8 +180,15 @@ def enregistrer_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_SOC, bornes_soc, schema=SCHEMA_SOC)
     hass.services.async_register(
         DOMAIN, SERVICE_ECRIRE, ecrire_brut, schema=SCHEMA_ECRIRE)
+    async def reset_sante(appel: ServiceCall) -> None:
+        # Efface les capacités mesurées et les repères : la mesure repart au
+        # prochain cycle de 25 points de SOC.
+        _coordinateur(hass, appel).reinitialiser_sante()
+
     hass.services.async_register(
         DOMAIN, SERVICE_REDEPLOYER, redeployer, schema=SCHEMA_REDEPLOYER)
+    hass.services.async_register(
+        DOMAIN, SERVICE_RESET_SANTE, reset_sante, schema=SCHEMA_RESET_SANTE)
 
 
 def retirer_services(hass: HomeAssistant) -> None:
@@ -186,5 +196,5 @@ def retirer_services(hass: HomeAssistant) -> None:
     if hass.data.get(DOMAIN):
         return
     for service in (SERVICE_PUISSANCE, SERVICE_PLAFONDS, SERVICE_SOC,
-                    SERVICE_ECRIRE, SERVICE_REDEPLOYER):
+                    SERVICE_ECRIRE, SERVICE_REDEPLOYER, SERVICE_RESET_SANTE):
         hass.services.async_remove(DOMAIN, service)

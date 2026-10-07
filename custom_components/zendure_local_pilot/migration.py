@@ -30,7 +30,8 @@ from .const import DOMAIN, PREFIXE
 _LOGGER = logging.getLogger(__name__)
 
 # Intégrations ayant pu créer les entités de la version YAML.
-PLATEFORMES_YAML = ("template", "rest", "integration", "utility_meter")
+PLATEFORMES_YAML = ("template", "rest", "integration", "utility_meter",
+                    "history_stats", "statistics")
 
 
 def entites_revendiquees(nb_packs: int) -> set[str]:
