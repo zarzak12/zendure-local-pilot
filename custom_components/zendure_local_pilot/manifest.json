@@ -1,6 +1,7 @@
 {
   "domain": "zendure_local_pilot",
   "name": "Zendure Local Pilot",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@zarzak12"],
   "config_flow": true,
   "documentation": "https://github.com/zarzak12/zendure-local-pilot",
