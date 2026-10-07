@@ -6,12 +6,10 @@
         "description": "Enter the address of the Shelly Pro 3EM that runs the regulation script. The battery itself is discovered automatically by the script.",
         "data": {
           "shelly_host": "Shelly IP address",
-          "em_canal": "Grid clamp channel (em1:0, 1 or 2)",
           "nb_packs": "Number of battery packs",
           "migrer": "Take over the entities from the YAML version"
         },
         "data_description": {
-          "em_canal": "The channel your grid clamp is wired to. Reading the wrong one makes the regulation chase a meaningless measurement.",
           "migrer": "Keep this enabled when upgrading from the YAML packages: it preserves your history and statistics. Remove the YAML packages first."
         }
       }
@@ -31,7 +29,6 @@
         "title": "Zendure Local Pilot settings",
         "data": {
           "shelly_host": "Shelly IP address",
-          "em_canal": "Grid clamp channel (em1:0, 1 or 2)",
           "nb_packs": "Number of battery packs"
         }
       }
@@ -50,8 +47,8 @@
         "state": {
           "arret": "Off",
           "autoconso": "Self-consumption",
-          "charge": "Forced charge",
-          "decharge": "Forced discharge",
+          "charge_seule": "Charge only",
+          "decharge_seule": "Discharge only",
           "manuel": "Manual"
         }
       },
@@ -84,7 +81,7 @@
   "services": {
     "set_power": {
       "name": "Power setpoint",
-      "description": "Forces a power setpoint. Positive discharges to the house, negative charges from the grid, zero idles. The value is clamped to the limits the battery reports. Volatile write: if the Shelly regulation is running, it takes over on the next cycle.",
+      "description": "Forces a power setpoint. Positive discharges to the house, negative charges from the grid, zero idles. The value is clamped by the Maximum discharge and Maximum charge sliders. Volatile write: if the Shelly regulation is running, it takes over on the next cycle.",
       "fields": {
         "power": {
           "name": "Power",
@@ -148,7 +145,7 @@
     },
     "redeploy_script": {
       "name": "Redeploy the Shelly script",
-      "description": "Rewrites the regulation script from a local file, in chunks, then checks the size read back. The Shelly web editor silently truncates large scripts; this service does not.",
+      "description": "Rewrites the regulation script from a local file, in chunks, then reads it back in full and compares. The Shelly web editor silently truncates large scripts; this service does not.",
       "fields": {
         "chemin": {
           "name": "File path",

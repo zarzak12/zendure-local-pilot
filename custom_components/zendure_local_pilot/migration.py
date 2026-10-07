@@ -33,17 +33,38 @@ _LOGGER = logging.getLogger(__name__)
 PLATEFORMES_YAML = ("template", "rest", "integration", "utility_meter")
 
 
-def _concerne(entree: er.RegistryEntry) -> bool:
-    objet = entree.entity_id.split(".", 1)[-1]
-    return entree.platform in PLATEFORMES_YAML and objet.startswith(PREFIXE)
+def entites_revendiquees(nb_packs: int) -> set[str]:
+    """entity_id que l'intégration va créer.
+
+    Seuls ceux-là doivent être libérés. Les entités YAML que l'intégration ne
+    reprend pas (compteurs d'énergie, santé des packs…) doivent rester
+    intactes : l'utilisateur peut les garder en YAML à côté de l'intégration.
+    """
+    # Import local : ces modules dépendent des plateformes de Home Assistant.
+    from .binary_sensor import BINAIRES
+    from .number import NOMBRES_BATTERIE, NOMBRES_SHELLY, _nombres_kvs
+    from .select import CHOIX
+    from .sensor import CAPTEURS, _capteurs_pack
+
+    capteurs = list(CAPTEURS)
+    for n in range(1, nb_packs + 1):
+        capteurs.extend(_capteurs_pack(n))
+    ids = {f"sensor.{PREFIXE}_{d.key}" for d in capteurs}
+    ids |= {f"binary_sensor.{PREFIXE}_{d.key}" for d in BINAIRES}
+    ids |= {f"number.{PREFIXE}_{d.key}"
+            for d in (*NOMBRES_BATTERIE, *NOMBRES_SHELLY, *_nombres_kvs())}
+    ids |= {f"select.{PREFIXE}_{d.key}" for d in CHOIX}
+    ids.add(f"switch.{PREFIXE}_regulation")
+    return ids
 
 
-async def liberer_anciennes_entites(hass: HomeAssistant) -> list[str]:
-    """Supprime les entrées de registre de la version YAML. Retourne leurs id."""
+async def liberer_anciennes_entites(hass: HomeAssistant, nb_packs: int) -> list[str]:
+    """Supprime les entrées de registre YAML dont on reprend l'identifiant."""
     registre = er.async_get(hass)
+    revendiques = entites_revendiquees(nb_packs)
     liberees: list[str] = []
     for entree in list(registre.entities.values()):
-        if _concerne(entree):
+        if entree.platform in PLATEFORMES_YAML and entree.entity_id in revendiques:
             liberees.append(entree.entity_id)
             registre.async_remove(entree.entity_id)
 

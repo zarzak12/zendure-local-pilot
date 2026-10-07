@@ -65,7 +65,7 @@ def _prepare_doublures():
 
     ha = _module("homeassistant")
     ha.__path__ = []
-    _module("homeassistant.core", HomeAssistant=object, callback=lambda f: f)
+    _module("homeassistant.core", HomeAssistant=object, ServiceCall=object, callback=lambda f: f)
     _module("homeassistant.config_entries", ConfigEntry=object,
             ConfigFlow=object, ConfigFlowResult=object, OptionsFlow=object)
     _module("homeassistant.const",
@@ -141,6 +141,12 @@ def _charge(nom: str):
 
 for _nom in ("const", "calculs", "zendure", "shelly", "coordinator", "entity"):
     _charge(_nom)
+_module("voluptuous", Schema=lambda *a, **k: None, Required=lambda *a, **k: a[0],
+        Optional=lambda *a, **k: a[0], Coerce=lambda *a: None, All=lambda *a: None,
+        Range=lambda **k: None)
+_module("homeassistant.exceptions", HomeAssistantError=Exception)
+_module("homeassistant.helpers.config_validation", string=str)
+_charge("services")
 capteurs = _charge("sensor")
 nombres = _charge("number")
 choix = _charge("select")
@@ -355,14 +361,33 @@ def test_ecriture_des_bornes_soc_respecte_l_echelle():
     assert coord.ecritures == [("persistant", {"socSet": 90})]
 
 
-def test_bornes_des_curseurs_suivent_la_batterie():
+def test_bornes_des_curseurs_ne_suivent_pas_la_batterie():
+    # inverseMaxPower / chargeMaxLimit suivent la consigne sur certains
+    # firmwares : en tirer les bornes des curseurs refermerait la course sur
+    # la consigne en cours. Les bornes sont fixes, comme dans le script.
+    for cle in ("decharge_max", "charge_max"):
+        c = _controle(cle)
+        assert not hasattr(c, "bornes"), f"{cle} : bornes dynamiques réintroduites"
+        assert (c.native_min_value, c.native_max_value) == (0, 4000)
+
+
+def test_set_power_borne_par_les_curseurs():
+    services = sys.modules.get("zlp.services")
     d = _donnees(RAPPORT_REEL)
-    assert _controle("decharge_max").bornes(d) == (0, 3000)
-    assert _controle("charge_max").bornes(d) == (0, 3000)
-    # Batterie encore muette : on se replie, sans inventer une limite basse
-    # qui briderait un 4000.
-    vide = _donnees({"properties": {}, "packData": []})
-    assert _controle("decharge_max").bornes(vide) == (0, const.LIMITE_REPLI)
+    d.shelly = {"number:200": {"value": 2500}, "number:201": {"value": 1200}}
+    assert services.plafonds_utilisateur(d) == (2500, 1200)
+    # Curseurs illisibles : repli sur 4000, sans jamais lever de limite basse
+    d.shelly = {}
+    assert services.plafonds_utilisateur(d) == (const.LIMITE_REPLI, const.LIMITE_REPLI)
+    assert services.plafonds_utilisateur(None) == (const.LIMITE_REPLI, const.LIMITE_REPLI)
+
+
+def test_curseurs_alignes_sur_le_script():
+    # Le délai de veille est en minutes dans le script (× 60), les marges
+    # acceptent une injection tolérée (négatif).
+    assert _controle("delai_veille").native_max_value == 60
+    assert _controle("buffer").native_min_value == -200
+    assert _controle("buffer_charge").native_min_value == -200
 
 
 def test_reglages_kvs_restent_types():
@@ -421,11 +446,67 @@ def test_etats_binaires():
     assert par_cle["en_veille"].valeur(d) is True
     assert par_cle["script_shelly"].valeur(d) is True
     assert par_cle["batterie_joignable"].valeur(d) is True
-    assert par_cle["defaut"].valeur(d) is False
+    assert par_cle["erreur"].valeur(d) is False
+    assert par_cle["reseau_connecte"].valeur(d) is True
     # faultLevel non nul doit lever l'alerte même si is_error vaut 0
     alerte = dict(RAPPORT_REEL)
     alerte["properties"] = {**RAPPORT_REEL["properties"], "faultLevel": 3}
-    assert par_cle["defaut"].valeur(_donnees(alerte)) is True
+    assert par_cle["erreur"].valeur(_donnees(alerte)) is True
+
+
+def test_mesure_reseau_suit_la_pince_de_la_regulation():
+    d = _donnees(RAPPORT_REEL)
+    d.shelly = {"em1:0": {"act_power": 12.0}, "em1:2": {"act_power": -340.4}}
+    d.kvs = {"zendure_em": 2}
+    assert _valeur("reseau", d) == -340.4
+    par_cle = {b.key: b for b in binaires.BINAIRES}
+    assert par_cle["zero_soutirage"].valeur(d) is True
+    # Pince absente : indisponible plutôt que 0, qui passerait pour un équilibre
+    d.kvs = {"zendure_em": 1}
+    assert _valeur("reseau", d) == "INDISPONIBLE"
+    assert par_cle["zero_soutirage"].valeur(d) is None
+
+
+def test_puissance_et_etat_dans_la_convention_yaml():
+    # + charge / − décharge, comme sensor.zendure_solarflow4000mix_puissance
+    charge = dict(RAPPORT_REEL)
+    charge["properties"] = {**RAPPORT_REEL["properties"], "outputPackPower": 900, "packInputPower": 0}
+    assert _valeur("puissance", _donnees(charge)) == 900
+    assert _valeur("etat", _donnees(charge)) == "Charge"
+    assert _valeur("etat", _donnees(RAPPORT_REEL)) == "Veille"
+    assert _valeur("limite_soc", _donnees(RAPPORT_REEL)) == "Inconnu"
+    plein = dict(RAPPORT_REEL)
+    plein["properties"] = {**RAPPORT_REEL["properties"], "socLimit": 17}
+    assert _valeur("limite_soc", _donnees(plein)) == "SOC max atteint"
+
+
+# --------------------------------------------------------------------------
+# Cohérence avec le script du Shelly : l'intégration écrit dans SES composants
+# --------------------------------------------------------------------------
+SCRIPT = os.path.join(RACINE, "scripts", "zendure_solarflow_4000_mix_pro.js")
+
+
+def _script():
+    with open(SCRIPT, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_modes_identiques_au_script():
+    import re
+    options = re.search(r'name: "Zendure mode".*?options: \[([^\]]*)\]', _script(), re.S)
+    assert options, "options du mode introuvables dans le script"
+    du_script = re.findall(r'"([^"]+)"', options.group(1))
+    assert du_script == list(const.MODES), f"script {du_script} / intégration {const.MODES}"
+
+
+def test_reglages_kvs_connus_du_script():
+    import re
+    defauts = re.search(r"let DEFAULTS = \{(.*?)\};", _script(), re.S).group(1)
+    cles = set(re.findall(r"(zendure_\w+):", defauts))
+    inconnues = set(const.KVS_REGLAGES) - cles
+    assert not inconnues, f"réglages exposés mais ignorés par le script : {inconnues}"
+    oubliees = cles - set(const.KVS_REGLAGES) - set(const.KVS_LECTURE_SEULE)
+    assert not oubliees, f"réglages du script non exposés par l'intégration : {oubliees}"
 
 
 def test_toutes_les_options_sont_traduites():

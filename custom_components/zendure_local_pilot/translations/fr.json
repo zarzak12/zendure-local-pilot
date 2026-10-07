@@ -6,12 +6,10 @@
         "description": "Saisis l'adresse du Shelly Pro 3EM qui héberge le script de régulation. La batterie, elle, est découverte toute seule par le script.",
         "data": {
           "shelly_host": "Adresse IP du Shelly",
-          "em_canal": "Canal de la pince réseau (em1:0, 1 ou 2)",
           "nb_packs": "Nombre de packs batterie",
           "migrer": "Reprendre les entités de la version YAML"
         },
         "data_description": {
-          "em_canal": "Le canal sur lequel ta pince réseau est câblée. En lire un autre ferait réguler sur une mesure qui ne veut rien dire.",
           "migrer": "À laisser coché si tu viens des packages YAML : c'est ce qui préserve ton historique et tes statistiques. Retire les packages YAML avant."
         }
       }
@@ -31,7 +29,6 @@
         "title": "Réglages Zendure Local Pilot",
         "data": {
           "shelly_host": "Adresse IP du Shelly",
-          "em_canal": "Canal de la pince réseau (em1:0, 1 ou 2)",
           "nb_packs": "Nombre de packs batterie"
         }
       }
@@ -48,10 +45,10 @@
       "mode": {
         "name": "Mode",
         "state": {
-          "arret": "Arr?t",
+          "arret": "Arrêt",
           "autoconso": "Autoconsommation",
-          "charge": "Charge forc?e",
-          "decharge": "D?charge forc?e",
+          "charge_seule": "Charge seule",
+          "decharge_seule": "Décharge seule",
           "manuel": "Manuel"
         }
       },
@@ -59,7 +56,7 @@
         "name": "Injection PV",
         "state": {
           "auto": "Auto",
-          "autorisee": "Autoris?e",
+          "autorisee": "Autorisée",
           "interdite": "Interdite"
         }
       },
@@ -67,12 +64,12 @@
         "name": "Mode secours",
         "state": {
           "standard": "Standard",
-          "economique": "?conomique",
-          "arret": "Arr?t"
+          "economique": "Économique",
+          "arret": "Arrêt"
         }
       },
       "canal_em": {
-        "name": "Pince r?seau lue",
+        "name": "Pince réseau lue",
         "state": {
           "0": "Pince 1 (em1:0)",
           "1": "Pince 2 (em1:1)",
@@ -84,7 +81,7 @@
   "services": {
     "set_power": {
       "name": "Consigne de puissance",
-      "description": "Impose une puissance ? la batterie. Positif = d?charge vers la maison, n?gatif = charge depuis le r?seau, 0 = veille. La valeur est born?e par les plafonds que la batterie annonce. ?criture volatile : si la r?gulation du Shelly tourne, elle reprendra la main au cycle suivant.",
+      "description": "Impose une puissance à la batterie. Positif = décharge vers la maison, négatif = charge depuis le réseau, 0 = veille. La valeur est bornée par les curseurs Décharge maximale et Charge maximale. Écriture volatile : si la régulation du Shelly tourne, elle reprendra la main au cycle suivant.",
       "fields": {
         "power": {
           "name": "Puissance",
@@ -92,17 +89,17 @@
         },
         "entry_id": {
           "name": "Installation",
-          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+          "description": "À préciser seulement si plusieurs batteries sont configurées."
         }
       }
     },
     "set_limits": {
       "name": "Plafonds de l'onduleur",
-      "description": "?crit les plafonds de d?charge et de charge. R?glage enregistr? en m?moire flash : ? ne pas appeler dans une boucle.",
+      "description": "Écrit les plafonds de décharge et de charge. Réglage enregistré en mémoire flash : à ne pas appeler dans une boucle.",
       "fields": {
         "decharge_max": {
-          "name": "D?charge maximale",
-          "description": "Plafond de d?charge, en watts."
+          "name": "Décharge maximale",
+          "description": "Plafond de décharge, en watts."
         },
         "charge_max": {
           "name": "Charge maximale",
@@ -110,53 +107,53 @@
         },
         "entry_id": {
           "name": "Installation",
-          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+          "description": "À préciser seulement si plusieurs batteries sont configurées."
         }
       }
     },
     "set_soc": {
       "name": "Bornes de charge",
-      "description": "?crit les bornes SOC. L'?chelle du firmware (pourcentages ou pour-mille) est d?tect?e automatiquement. R?glage enregistr? en m?moire flash.",
+      "description": "Écrit les bornes SOC. L'échelle du firmware (pourcentages ou pour-mille) est détectée automatiquement. Réglage enregistré en mémoire flash.",
       "fields": {
         "min_soc": {
           "name": "SOC minimum",
-          "description": "Niveau sous lequel la batterie cesse de se d?charger."
+          "description": "Niveau sous lequel la batterie cesse de se décharger."
         },
         "max_soc": {
           "name": "SOC maximum",
-          "description": "Niveau au-del? duquel la batterie cesse de se charger."
+          "description": "Niveau au-delà duquel la batterie cesse de se charger."
         },
         "entry_id": {
           "name": "Installation",
-          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+          "description": "À préciser seulement si plusieurs batteries sont configurées."
         }
       }
     },
     "write_properties": {
-      "name": "?crire des propri?t?s",
-      "description": "Envoie des propri?t?s brutes ? la batterie, sans interpr?tation. Porte de sortie pour les propri?t?s zenSDK que l'int?gration n'expose pas encore. ? manier avec prudence.",
+      "name": "Écrire des propriétés",
+      "description": "Envoie des propriétés brutes à la batterie, sans interprétation. Porte de sortie pour les propriétés zenSDK que l'intégration n'expose pas encore. À manier avec prudence.",
       "fields": {
         "properties": {
-          "name": "Propri?t?s",
-          "description": "Dictionnaire de propri?t?s zenSDK."
+          "name": "Propriétés",
+          "description": "Dictionnaire de propriétés zenSDK."
         },
         "entry_id": {
           "name": "Installation",
-          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+          "description": "À préciser seulement si plusieurs batteries sont configurées."
         }
       }
     },
     "redeploy_script": {
-      "name": "Red?ployer le script du Shelly",
-      "description": "R??crit le script de r?gulation ? partir d'un fichier local, par morceaux, puis v?rifie la taille relue. L'?diteur web du Shelly tronque silencieusement les scripts volumineux ; ce service ne le fait pas.",
+      "name": "Redéployer le script du Shelly",
+      "description": "Réécrit le script de régulation à partir d'un fichier local, par morceaux, puis le relit en entier et le compare. L'éditeur web du Shelly tronque silencieusement les scripts volumineux ; ce service ne le fait pas.",
       "fields": {
         "chemin": {
           "name": "Chemin du fichier",
-          "description": "Chemin du script, dans un dossier autoris? par allowlist_external_dirs."
+          "description": "Chemin du script, dans un dossier autorisé par allowlist_external_dirs."
         },
         "entry_id": {
           "name": "Installation",
-          "description": "? pr?ciser seulement si plusieurs batteries sont configur?es."
+          "description": "À préciser seulement si plusieurs batteries sont configurées."
         }
       }
     }

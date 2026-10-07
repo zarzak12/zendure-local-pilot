@@ -111,23 +111,44 @@ class ClientShelly:
         L'éditeur web du Shelly tronque silencieusement au-delà d'environ 7 ko,
         ce qui produit un script syntaxiquement valide mais amputé : la
         régulation semble alors tourner tout en ne faisant plus rien. On passe
-        donc toujours par PutCode, et on vérifie la taille écrite.
+        donc toujours par PutCode, puis on relit tout et on compare.
+
+        Le découpage se fait en CARACTÈRES : couper en octets tranche les
+        accents en deux, et leurs moitiés seraient perdues à l'écriture.
         """
+        code = code.replace("\r\n", "\n")   # le Shelly stocke en LF
         await self.appel("Script.Stop", {"id": ident})
         await self.appel("Script.PutCode", {"id": ident, "code": "", "append": False})
-        octets = code.encode()
-        for debut in range(0, len(octets), TAILLE_MORCEAU):
-            morceau = octets[debut:debut + TAILLE_MORCEAU].decode(errors="ignore")
+        for debut in range(0, len(code), TAILLE_MORCEAU):
             await self.appel(
                 "Script.PutCode",
-                {"id": ident, "code": morceau, "append": True},
+                {"id": ident, "code": code[debut:debut + TAILLE_MORCEAU], "append": True},
             )
-        relu = await self.appel("Script.GetCode", {"id": ident})
-        taille = len((relu or {}).get("data", "").encode())
-        if taille < len(octets) * 0.95:
+        relu = await self.script_lire(ident)
+        if relu != code:
+            ecart = next((i for i, (a, b) in enumerate(zip(relu, code)) if a != b),
+                         min(len(relu), len(code)))
             raise ErreurShelly(
-                f"script tronqué à l'écriture : {taille} octets reçus "
-                f"sur {len(octets)} envoyés"
+                f"script mal écrit : {len(relu)} caractères relus sur {len(code)}, "
+                f"premier écart au caractère {ecart}. Le script reste arrêté."
             )
         await self.appel("Script.Start", {"id": ident})
-        _LOGGER.info("script %s redéployé (%d octets)", ident, len(octets))
+        _LOGGER.info("script %s redéployé (%d caractères)", ident, len(code))
+
+    async def script_lire(self, ident: int) -> str:
+        """Relit le code complet. GetCode pagine, en OCTETS."""
+        texte, offset = "", 0
+        while True:
+            res = await self.appel(
+                "Script.GetCode", {"id": ident, "offset": offset, "len": TAILLE_MORCEAU})
+            morceau = (res or {}).get("data", "")
+            # Une page peut s'arrêter au milieu d'un caractère multi-octets :
+            # ses octets orphelins arrivent en U+FFFD. On les écarte, l'offset
+            # reste sur ce caractère, relu entier à la page suivante.
+            morceau = morceau.rstrip("�")
+            if not morceau:
+                return texte
+            texte += morceau
+            offset += len(morceau.encode())
+            if (res or {}).get("left", 0) <= 0:
+                return texte

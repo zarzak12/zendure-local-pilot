@@ -60,6 +60,31 @@ class Donnees:
             return bloc.get("value")
         return None
 
+    @property
+    def canal_em(self) -> int:
+        """Pince du Shelly suivie par la régulation, d'après son propre réglage."""
+        try:
+            return min(2, max(0, int(self.kvs.get("zendure_em", 0))))
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def reseau(self) -> float | None:
+        """Puissance au point de livraison, en watts. Positif = soutirage.
+
+        Lue sur la pince que la régulation suit réellement : en afficher une
+        autre donnerait un tableau de bord cohérent en apparence et faux en
+        pratique.
+        """
+        bloc = self.shelly.get(f"em1:{self.canal_em}")
+        if not isinstance(bloc, dict):
+            return None
+        valeur = bloc.get("act_power")
+        try:
+            return round(float(valeur), 1)
+        except (TypeError, ValueError):
+            return None
+
 
 class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
     """Interroge le Shelly puis la batterie, à chaque cycle."""
@@ -73,7 +98,9 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         )
         session = async_get_clientsession(hass)
         self.entree = entree
-        self.shelly = ClientShelly(session, entree.data[CONF_SHELLY_HOST])
+        # L'adresse modifiée dans les options prime sur celle de l'installation.
+        self.shelly = ClientShelly(
+            session, entree.options.get(CONF_SHELLY_HOST, entree.data[CONF_SHELLY_HOST]))
         self.zendure = ClientZendure(session, "")
         self._id_script: int | None = None
 
@@ -90,10 +117,10 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         script qui régule : afficher une autre pince que celle qu'il suit
         donnerait un tableau de bord cohérent en apparence et faux en réalité.
         """
-        valeur = self.data.kvs.get("zendure_em") if self.data else None
-        if valeur is None:
-            valeur = self.entree.options.get(
-                CONF_EM_CANAL, self.entree.data.get(CONF_EM_CANAL, 0))
+        if self.data and "zendure_em" in self.data.kvs:
+            return self.data.canal_em
+        valeur = self.entree.options.get(
+            CONF_EM_CANAL, self.entree.data.get(CONF_EM_CANAL, 0))
         try:
             return min(2, max(0, int(valeur)))
         except (TypeError, ValueError):

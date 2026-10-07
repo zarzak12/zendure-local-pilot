@@ -16,9 +16,10 @@ L'intégration supprime ces trois corvées :
 
 - installation et mise à jour par HACS ;
 - configuration par formulaire, sans toucher à `configuration.yaml` ;
-- **identifiants d'entités stables**, identiques chez tout le monde, donc un
-  tableau de bord qui s'importe tel quel. Le script `personnaliser.ps1`
-  devient inutile.
+- **identifiants d'entités stables**, identiques chez tout le monde : plus
+  besoin de `personnaliser.ps1` pour adapter des identifiants propres à
+  chaque Shelly. (Le tableau de bord du dépôt vise encore les entités de la
+  version YAML, voir [Limites connues](#limites-connues).)
 
 Ce qui **ne change pas** : la régulation continue de tourner **dans le
 Shelly**. L'intégration ne régule pas. Si Home Assistant s'arrête, ou si tu
@@ -43,6 +44,8 @@ Copie `custom_components/zendure_local_pilot/` dans le dossier
 
 ### Prérequis
 
+Home Assistant **2024.11 ou plus récent**.
+
 Le script de régulation doit **déjà tourner sur le Shelly**. L'intégration le
 vérifie et refuse la configuration s'il est absent : sans lui, il n'y aurait
 rien à superviser et aucune batterie à découvrir. Voir le [README](../README.md)
@@ -52,10 +55,13 @@ pour le déploiement du script.
 
 | Champ | Rôle |
 |---|---|
-| Adresse IP du Shelly | C'est le seul point d'entrée. L'adresse de la batterie est découverte via le script. |
-| Canal de la pince réseau | `em1:0`, `1` ou `2`. **Le canal que ta pince réseau mesure réellement.** |
+| Adresse IP du Shelly | C'est le seul point d'entrée. L'adresse de la batterie est découverte via le script. Modifiable ensuite dans les options. |
 | Nombre de packs | Détermine combien de jeux d'entités de pack sont créés. Les packs absents restent indisponibles. |
 | Reprendre les entités de la version YAML | À cocher si tu viens des packages. Voir ci-dessous. |
+
+Le **canal de la pince** n'est pas demandé : l'intégration reprend celui que
+le script utilise déjà (clé `zendure_em`). Pour le changer, utilise l'entité
+`select.zendure_solarflow4000mix_canal_em` (« Pince réseau lue »).
 
 ## Migration depuis les packages YAML
 
@@ -76,8 +82,9 @@ l'ancienne entité, qui ne se met plus à jour.
 2. Redémarre Home Assistant.
 3. Ajoute l'intégration, **case de migration cochée**.
 
-L'intégration libère alors les anciennes entrées de registre puis reprend les
-mêmes identifiants. **L'historique et les statistiques long terme sont rangés
+L'intégration libère alors les anciennes entrées de registre **des seules
+entités qu'elle reprend**, une seule fois, puis reprend les mêmes
+identifiants. **L'historique et les statistiques long terme sont rangés
 par identifiant d'entité : ils survivent.** Tes graphiques et ton tableau de
 bord continuent comme si de rien n'était.
 
@@ -95,8 +102,15 @@ devient `number.zendure_solarflow4000mix_soc_min_consigne`. Leur historique
 n'est pas récupérable — c'est l'historique d'un curseur de réglage, sans grand
 intérêt, mais autant le dire franchement.
 
-En revanche, **toutes les mesures** (SOC, puissances, températures, énergies)
-conservent leur identifiant et leur historique.
+En revanche, les mesures reprises par l'intégration (SOC, puissances,
+températures, réseau, état des packs…) conservent leur identifiant et leur
+historique.
+
+⚠️ **Toutes ne sont pas encore reprises** (voir
+[Limites connues](#limites-connues)) : compteurs d'énergie, rendements,
+santé des packs, calibration, statistiques du jour. Retirer les packages les
+fait disparaître ; leur historique reste consultable mais n'avance plus. Si
+tu y tiens, garde pour l'instant la version YAML.
 
 Pense à mettre à jour tes automatisations qui référençaient ces aides, et à
 remplacer les appels `script.zendure_solarflow4000mix_set_power` par le
@@ -106,9 +120,12 @@ service `zendure_local_pilot.set_power`.
 
 ### Mesures
 
-Les mêmes que la version YAML : SOC, puissances d'entrée et de sortie,
-production photovoltaïque, tensions, températures, détail par pack,
-estimations d'énergie disponible et requise, état de la liaison.
+SOC, puissance au point de livraison (lue sur la pince que suit la
+régulation), puissances d'entrée et de sortie, puissance et état de la
+batterie, production photovoltaïque, tensions, températures, butée SOC,
+détail par pack, estimations d'énergie disponible et requise, état des
+liaisons. Une partie seulement de la version YAML, voir
+[Limites connues](#limites-connues).
 
 Les entités portent le modèle réel dans leur **nom affiché** (« Zendure
 SolarFlow 2400 AC+ SOC »), mais leur **identifiant reste
@@ -123,7 +140,7 @@ tout le monde, et aux installations venues du YAML de garder leur historique.
 | `select` | Mode de régulation, injection PV, mode secours, pince lue |
 | `number` | Bornes SOC, plafonds onduleur, marges de charge et de décharge, consigne manuelle, délai de veille, réglages fins |
 | `switch` | Régulation (démarre ou arrête le script du Shelly) |
-| `binary_sensor` | Script en marche, veille, défaut, liaison batterie |
+| `binary_sensor` | Script en marche, veille, erreur, liaison batterie, réseau connecté, zéro soutirage |
 
 Les réglages fins de la régulation (gain, zone morte, hystérésis…) sont
 désactivés par défaut : active-les dans la page de l'appareil si tu sais ce
@@ -133,7 +150,7 @@ que tu fais.
 
 | Service | Rôle |
 |---|---|
-| `zendure_local_pilot.set_power` | Consigne de puissance, bornée par les limites de la batterie |
+| `zendure_local_pilot.set_power` | Consigne de puissance, bornée par les curseurs *Décharge maximale* / *Charge maximale* |
 | `zendure_local_pilot.set_limits` | Plafonds de décharge et de charge |
 | `zendure_local_pilot.set_soc` | Bornes de charge, échelle du firmware détectée |
 | `zendure_local_pilot.write_properties` | Écriture brute de propriétés zenSDK |
@@ -154,9 +171,20 @@ deviennent indisponibles.
 ## Limites connues
 
 - Non testée sur une installation réelle à ce jour.
-- Les compteurs d'énergie cumulés de la version YAML
-  (`platform: integration`, `utility_meter`) ne sont pas encore portés :
-  garde-les en YAML si tu y tiens, ils cohabitent sans conflit.
+- **Pas encore portées** depuis la version YAML :
+  - compteurs d'énergie : `energie_chargee`, `energie_dechargee`,
+    `energie_pv`, `pv_jour`, `pack_N_energie_dc` ;
+  - rendements : `rendement_*`, `efficacite_*` ;
+  - santé des packs : `pack_N_sante`, `pack_N_capacite_estimee`,
+    `sante_min`, `mesure_sante_progression` ;
+  - flux et diagnostics dérivés : `pv_vers_batterie`, `pv_vers_maison`,
+    `passthrough_pv`, `charge_dc`, `decharge_dc`, `stockage`,
+    `temps_charge_restant`, `calibration`, `derniere_calibration`,
+    `jours_depuis_calibration`, `commutations_*`, `zero_soutirage_jour`.
+- **Le tableau de bord du dépôt ne fonctionne pas encore avec
+  l'intégration** : il vise les aides `input_number.*` et les entités du
+  Shelly préfixées `SHELLY_ID`, alors que l'intégration expose des `number.*`
+  et des `select.*` sous `zendure_solarflow4000mix_…`.
 - Les composants virtuels doivent exister sur le Shelly ; ils sont créés par
   le script.
 - La Hyper 2000 reste incompatible : elle n'expose pas le zenSDK.

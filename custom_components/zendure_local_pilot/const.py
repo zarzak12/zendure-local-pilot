@@ -36,11 +36,13 @@ KVS_REGLAGES: Final = {
     # la batterie ne les applique et la régulation se met à osciller.
     "zendure_period": (1000, 10000, 100),
     "zendure_tick": (100, 2000, 50),
-    "zendure_gain": (0.1, 1.5, 0.05),
+    "zendure_gain": (0.1, 1, 0.05),
     "zendure_dead": (0, 200, 5),
     "zendure_hyst": (0, 200, 5),
     "zendure_wake": (0, 500, 10),
-    "zendure_flip": (0, 60, 1),
+    "zendure_flip": (0, 300, 1),
+    "zendure_flipw": (0, 1000, 10),
+    "zendure_smooth": (0, 0.9, 0.1),
 }
 
 KVS_LECTURE_SEULE: Final = ("zendure_ip", "zendure_sn")
@@ -63,7 +65,10 @@ VC_DELAI_VEILLE: Final = "number:204"
 VC_EN_VEILLE: Final = "boolean:200"
 VC_BUFFER_CHARGE: Final = "number:205"
 
-MODES: Final = ["arret", "autoconso", "charge", "decharge", "manuel"]
+# Doivent être EXACTEMENT les options de l'enum créé par le script (enum:200) :
+# une option inconnue du script serait refusée par le Shelly, et un mode du
+# script absent d'ici s'afficherait comme inconnu. Vérifié par les tests.
+MODES: Final = ["arret", "autoconso", "charge_seule", "decharge_seule", "manuel"]
 
 # Repli employé tant que la batterie n'a pas annoncé ses propres limites.
 LIMITE_REPLI: Final = 4000

@@ -18,11 +18,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .calculs import echelle_soc, limites_materielles
+from .calculs import echelle_soc
 from .const import (
     DOMAIN,
     KVS_REGLAGES,
-    LIMITE_REPLI,
     VC_BUFFER,
     VC_BUFFER_CHARGE,
     VC_CHARGE_MAX,
@@ -42,10 +41,9 @@ class DescriptionNombre(NumberEntityDescription):
 
     valeur: Callable[[Donnees], float | None]
     ecrire: Callable[[CoordinateurZendure, float], Any]
-    # Bornes dynamiques : la batterie annonce ses propres plafonds, et les
-    # figer à 4000 W priverait un SolarFlow 800 de la moitié de sa course
-    # utile tout en laissant croire à un 4000 qu'il peut monter plus haut.
-    bornes: Callable[[Donnees], tuple[float, float]] | None = None
+    # Pas de bornes déduites de inverseMaxPower / chargeMaxLimit : sur certains
+    # firmwares, ces champs suivent la consigne en cours au lieu d'un plafond
+    # fixe (voir le script). Les bornes sont celles des composants du Shelly.
     shelly: bool = False
 
 
@@ -81,16 +79,6 @@ def _plafond(cle: str) -> Callable[[CoordinateurZendure, float], Any]:
     async def ecrire(coord: CoordinateurZendure, valeur: float) -> None:
         await coord.ecrire_batterie_persistant({cle: int(valeur)})
     return ecrire
-
-
-def _bornes_decharge(d: Donnees) -> tuple[float, float]:
-    maxi, _ = limites_materielles(d.proprietes)
-    return 0, maxi or LIMITE_REPLI
-
-
-def _bornes_charge(d: Donnees) -> tuple[float, float]:
-    _, maxi = limites_materielles(d.proprietes)
-    return 0, maxi or LIMITE_REPLI
 
 
 NOMBRES_BATTERIE: tuple[DescriptionNombre, ...] = (
@@ -180,7 +168,6 @@ NOMBRES_SHELLY: tuple[DescriptionNombre, ...] = (
         mode=NumberMode.SLIDER,
         valeur=_lire_vc(VC_DECHARGE_MAX),
         ecrire=_vc(VC_DECHARGE_MAX),
-        bornes=_bornes_decharge,
         shelly=True,
     ),
     DescriptionNombre(
@@ -195,7 +182,6 @@ NOMBRES_SHELLY: tuple[DescriptionNombre, ...] = (
         mode=NumberMode.SLIDER,
         valeur=_lire_vc(VC_CHARGE_MAX),
         ecrire=_vc(VC_CHARGE_MAX),
-        bornes=_bornes_charge,
         shelly=True,
     ),
     DescriptionNombre(
@@ -216,7 +202,8 @@ NOMBRES_SHELLY: tuple[DescriptionNombre, ...] = (
         key="buffer",
         name="Marge de décharge",
         icon="mdi:arrow-expand-vertical",
-        native_min_value=0,
+        # Négatif = injection résiduelle tolérée, comme dans le script.
+        native_min_value=-200,
         native_max_value=200,
         native_step=5,
         native_unit_of_measurement=W,
@@ -230,7 +217,7 @@ NOMBRES_SHELLY: tuple[DescriptionNombre, ...] = (
         key="buffer_charge",
         name="Marge de charge",
         icon="mdi:arrow-collapse-vertical",
-        native_min_value=0,
+        native_min_value=-200,
         native_max_value=200,
         native_step=5,
         native_unit_of_measurement=W,
@@ -244,10 +231,11 @@ NOMBRES_SHELLY: tuple[DescriptionNombre, ...] = (
         key="delai_veille",
         name="Délai de mise en veille",
         icon="mdi:timer-sand",
+        # En MINUTES : le script multiplie la valeur par 60 (0 = jamais).
         native_min_value=0,
-        native_max_value=600,
-        native_step=10,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
+        native_max_value=60,
+        native_step=1,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
         valeur=_lire_vc(VC_DELAI_VEILLE),
@@ -268,6 +256,8 @@ LIBELLES_KVS: dict[str, tuple[str, str, str | None]] = {
     "zendure_hyst": ("Hystérésis", "mdi:sine-wave", UnitOfPower.WATT),
     "zendure_wake": ("Seuil de réveil", "mdi:power-sleep", UnitOfPower.WATT),
     "zendure_flip": ("Délai d'inversion", "mdi:swap-vertical", UnitOfTime.SECONDS),
+    "zendure_flipw": ("Seuil d'inversion", "mdi:swap-horizontal-bold", UnitOfPower.WATT),
+    "zendure_smooth": ("Lissage", "mdi:chart-bell-curve-cumulative", None),
 }
 
 
@@ -347,13 +337,6 @@ class NombreZendure(EntiteZendure, NumberEntity):
         if self.coordinator.data is None:
             return None
         return self.entity_description.valeur(self.coordinator.data)
-
-    @property
-    def native_max_value(self) -> float:
-        bornes = self.entity_description.bornes
-        if bornes and self.coordinator.data is not None:
-            return bornes(self.coordinator.data)[1]
-        return self.entity_description.native_max_value
 
     async def async_set_native_value(self, value: float) -> None:
         await self.entity_description.ecrire(self.coordinator, value)

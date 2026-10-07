@@ -66,7 +66,11 @@ class FluxConfiguration(ConfigFlow, domain=DOMAIN):
                 else:
                     await self.async_set_unique_id(sonde["id_appareil"])
                     self._abort_if_unique_id_configured()
-                    canal = sonde["kvs"].get("zendure_em", user_input[CONF_EM_CANAL])
+                    # Le canal n'est pas demandé : le script crée toujours la
+                    # clé zendure_em, et c'est elle qui fait foi. Le demander ici
+                    # risquerait d'écraser le réglage d'un utilisateur venu du
+                    # YAML. Il se change ensuite par l'entité « Pince réseau lue ».
+                    canal = sonde["kvs"].get("zendure_em", 0)
                     return self.async_create_entry(
                         title=f"Zendure ({hote})",
                         data={
@@ -83,9 +87,6 @@ class FluxConfiguration(ConfigFlow, domain=DOMAIN):
                     CONF_SHELLY_HOST,
                     default=(user_input or {}).get(CONF_SHELLY_HOST, ""),
                 ): str,
-                vol.Required(CONF_EM_CANAL, default=0): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=2)
-                ),
                 vol.Required(CONF_NB_PACKS, default=DEFAUT_NB_PACKS): vol.All(
                     vol.Coerce(int), vol.Range(min=1, max=4)
                 ),
@@ -117,9 +118,6 @@ class FluxOptions(OptionsFlow):
                 vol.Required(
                     CONF_SHELLY_HOST, default=actuel.get(CONF_SHELLY_HOST, "")
                 ): str,
-                vol.Required(
-                    CONF_EM_CANAL, default=actuel.get(CONF_EM_CANAL, 0)
-                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=2)),
                 vol.Required(
                     CONF_NB_PACKS, default=actuel.get(CONF_NB_PACKS, DEFAUT_NB_PACKS)
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=4)),

@@ -1,4 +1,4 @@
-"""États binaires : veille, régulation en marche, défaut, liaison batterie."""
+"""États binaires : veille, régulation en marche, erreur, liaisons, zéro soutirage."""
 
 from __future__ import annotations
 
@@ -41,6 +41,13 @@ def _defaut(d: Donnees) -> bool | None:
         return None
 
 
+def _reseau_connecte(d: Donnees) -> bool | None:
+    try:
+        return int(d.proprietes["gridState"]) == 1
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 BINAIRES: tuple[DescriptionBinaire, ...] = (
     DescriptionBinaire(
         key="script_shelly",
@@ -64,10 +71,25 @@ BINAIRES: tuple[DescriptionBinaire, ...] = (
         shelly=True,
     ),
     DescriptionBinaire(
-        key="defaut",
-        name="Défaut",
+        # « erreur » et non « défaut » : c'est l'identifiant de la version YAML,
+        # dont l'historique est ainsi conservé à la migration.
+        key="erreur",
+        name="Erreur",
         device_class=BinarySensorDeviceClass.PROBLEM,
         valeur=_defaut,
+    ),
+    DescriptionBinaire(
+        key="reseau_connecte",
+        name="Réseau connecté",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        valeur=_reseau_connecte,
+    ),
+    DescriptionBinaire(
+        key="zero_soutirage",
+        name="Zéro soutirage",
+        icon="mdi:transmission-tower-off",
+        valeur=lambda d: (d.reseau <= 0) if d.reseau is not None else None,
+        shelly=True,
     ),
 )
 

@@ -25,6 +25,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .calculs import (
     capacite_pack,
@@ -64,6 +65,8 @@ class DescriptionCapteur(SensorEntityDescription):
 
     valeur: Callable[[Donnees], Any]
     present: Callable[[Donnees], bool] = lambda d: True
+    # Mesure issue du Shelly : reste disponible si la batterie ne répond plus.
+    shelly: bool = False
 
 
 def _direct(suffixe: str, nom: str, propriete: str, **kwargs) -> DescriptionCapteur:
@@ -126,7 +129,30 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
         valeur=lambda d: (_i(d.proprietes, "gridOffPower")
                           + _i(d.proprietes, "gridOffPower2")),
     ),
+    # ---- Point de livraison, lu sur la pince que suit la régulation ----
+    DescriptionCapteur(
+        key="reseau", name="réseau", **_W,
+        valeur=lambda d: d.reseau,
+        present=lambda d: d.reseau is not None,
+        shelly=True,
+    ),
     # ---- Flux batterie ----
+    # + charge / − décharge, côté pack : même convention que la version YAML.
+    DescriptionCapteur(
+        key="puissance", name="puissance", **_W,
+        valeur=lambda d: -puissance_batterie_nette(d.proprietes),
+    ),
+    DescriptionCapteur(
+        key="etat", name="état", icon="mdi:battery-sync",
+        valeur=lambda d: ("Charge" if (w := -puissance_batterie_nette(d.proprietes)) > 20
+                          else "Décharge" if w < -20 else "Veille"),
+    ),
+    DescriptionCapteur(
+        key="limite_soc", name="limite SOC", icon="mdi:battery-lock",
+        valeur=lambda d: {0: "Normal", 1: "SOC max atteint", 2: "SOC min atteint"}.get(
+            _i(d.proprietes, "socLimit", -1) % 16 if _i(d.proprietes, "socLimit", -1) >= 0 else -1,
+            "Inconnu"),
+    ),
     _direct("charge_batterie", "charge batterie", "outputPackPower", **_W),
     _direct("decharge_batterie", "décharge batterie", "packInputPower", **_W),
     DescriptionCapteur(
@@ -161,6 +187,11 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
         key="injection_pv", name="injection PV", icon="mdi:transmission-tower",
         valeur=lambda d: {0: "Auto", 1: "Autorisée", 2: "Interdite"}.get(
             _i(d.proprietes, "gridReverse", -1), "Inconnu"),
+    ),
+    DescriptionCapteur(
+        key="mode_secours", name="mode secours", icon="mdi:power-plug-off",
+        valeur=lambda d: {0: "Standard", 1: "Économique", 2: "Arrêt"}.get(
+            _i(d.proprietes, "gridOffMode", -1), "Inconnu"),
     ),
     # ---- Synthèse des packs ----
     DescriptionCapteur(
@@ -312,7 +343,10 @@ class CapteurZendure(EntiteZendure, SensorEntity):
 
     @property
     def available(self) -> bool:
-        if not super().available:
+        if self.entity_description.shelly:
+            if not CoordinatorEntity.available.fget(self) or self.coordinator.data is None:
+                return False
+        elif not super().available:
             return False
         try:
             return self.entity_description.present(self.coordinator.data)

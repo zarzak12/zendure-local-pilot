@@ -14,7 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_MIGRER, DOMAIN
+from .const import CONF_MIGRER, CONF_NB_PACKS, DEFAUT_NB_PACKS, DOMAIN
 from .coordinator import CoordinateurZendure
 from .migration import liberer_anciennes_entites, verifier_migration
 from .services import enregistrer_services, retirer_services
@@ -35,8 +35,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # La libération doit précéder la création des entités, sinon les
     # identifiants d'origine sont déjà pris et les nôtres prendraient un
     # suffixe « _2 ».
-    if entry.options.get(CONF_MIGRER, entry.data.get(CONF_MIGRER, False)):
-        await liberer_anciennes_entites(hass)
+    # Une seule fois : à chaque démarrage, elle supprimerait sinon les entités
+    # d'un package YAML encore chargé, qui les recréerait aussitôt.
+    if entry.data.get(CONF_MIGRER, False):
+        nb_packs = int(entry.options.get(CONF_NB_PACKS, entry.data.get(CONF_NB_PACKS, DEFAUT_NB_PACKS)))
+        await liberer_anciennes_entites(hass, nb_packs)
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_MIGRER: False})
 
     coordinateur = CoordinateurZendure(hass, entry)
     await coordinateur.async_config_entry_first_refresh()

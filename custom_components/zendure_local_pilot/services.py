@@ -14,9 +14,9 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
-from .calculs import echelle_soc, limites_materielles
-from .const import DOMAIN, LIMITE_REPLI
-from .coordinator import CoordinateurZendure
+from .calculs import echelle_soc
+from .const import DOMAIN, LIMITE_REPLI, VC_CHARGE_MAX, VC_DECHARGE_MAX
+from .coordinator import CoordinateurZendure, Donnees
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +56,17 @@ SCHEMA_REDEPLOYER = vol.Schema({
 })
 
 
+def plafonds_utilisateur(donnees: Donnees | None) -> tuple[int, int]:
+    """Plafonds de décharge et de charge réglés sur le Shelly, en W."""
+    def lire(composant: str) -> int:
+        try:
+            v = int(float(donnees.vc(composant))) if donnees else LIMITE_REPLI
+        except (TypeError, ValueError):
+            return LIMITE_REPLI
+        return max(0, min(v, LIMITE_REPLI))
+    return lire(VC_DECHARGE_MAX), lire(VC_CHARGE_MAX)
+
+
 def _coordinateur(hass: HomeAssistant, appel: ServiceCall) -> CoordinateurZendure:
     """Retrouve l'installation visée.
 
@@ -86,10 +97,11 @@ def enregistrer_services(hass: HomeAssistant) -> None:
 
     async def consigne_puissance(appel: ServiceCall) -> None:
         coord = _coordinateur(hass, appel)
-        maxi_decharge, maxi_charge = limites_materielles(
-            coord.data.proprietes if coord.data else {})
-        maxi_decharge = maxi_decharge or LIMITE_REPLI
-        maxi_charge = maxi_charge or LIMITE_REPLI
+        # Bornée par les curseurs « décharge max » / « charge max » du Shelly,
+        # comme la régulation. Pas par inverseMaxPower / chargeMaxLimit : sur
+        # certains firmwares, ils suivent la consigne en cours, et la
+        # consigne ne pourrait alors plus jamais augmenter.
+        maxi_decharge, maxi_charge = plafonds_utilisateur(coord.data)
 
         p = int(appel.data["power"])
         p = min(p, maxi_decharge)
