@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_EM_CANAL, CONF_SHELLY_HOST, DOMAIN, INTERVALLE_SONDAGE, PREFIXE
+from .const import (
+    CONF_EM_CANAL,
+    CONF_MAJ_AUTO,
+    CONF_SHELLY_HOST,
+    DOMAIN,
+    INTERVALLE_SONDAGE,
+    KVS_VERSION_SCRIPT,
+    PREFIXE,
+    SCRIPT_EMBARQUE,
+)
 from .memoire import NB_PACKS_MAX, Memoire
 from .shelly import ClientShelly, ErreurShelly
 from .zendure import ClientZendure, ErreurZendure
@@ -114,6 +126,86 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         self._store: Store = Store(hass, 1, f"{DOMAIN}.{entree.entry_id}")
         self._script_arrete_depuis: float | None = None
         self._repli_fait = False
+        self._code_embarque: str | None = None
+        self.version_embarquee: str | None = None
+        self._maj_tentee: str | None = None
+        self.deploiement_en_cours = False
+
+    # -- script de régulation embarqué ---------------------------------------
+
+    async def async_charger_script_embarque(self) -> None:
+        chemin = os.path.join(os.path.dirname(__file__), SCRIPT_EMBARQUE)
+
+        def lire() -> str:
+            with open(chemin, encoding="utf-8") as fichier:
+                return fichier.read()
+
+        try:
+            self._code_embarque = await self.hass.async_add_executor_job(lire)
+        except OSError as err:
+            _LOGGER.error("script embarqué illisible (%s) : pas de mise à jour du Shelly", err)
+            return
+        self.version_embarquee = version_du_script(self._code_embarque)
+
+    @property
+    def version_shelly(self) -> str | None:
+        """Version du script installé, ou None s'il est antérieur à 1.2.0
+        (il ne publiait pas encore sa version)."""
+        if not self.data:
+            return None
+        v = self.data.kvs.get(KVS_VERSION_SCRIPT)
+        return str(v) if v else None
+
+    @property
+    def script_a_jour(self) -> bool:
+        return bool(self.version_embarquee) and self.version_shelly == self.version_embarquee
+
+    async def async_deployer_script(self) -> None:
+        """Pousse le script embarqué sur le Shelly, vérifié par relecture.
+
+        Les réglages ne bougent pas : ils vivent dans le KVS et les composants
+        virtuels, que le script retrouve au démarrage. Pendant les quelques
+        secondes d'écriture, la batterie garde sa consigne ; si le dépôt
+        échoue, le script reste arrêté et le repli à 0 W prend le relais.
+        """
+        if self._code_embarque is None:
+            raise ErreurShelly("script embarqué indisponible")
+        if self._id_script is None:
+            raise ErreurShelly("aucun script de régulation repéré sur le Shelly")
+        self.deploiement_en_cours = True
+        self.async_update_listeners()
+        try:
+            await self.shelly.script_deployer(self._id_script, self._code_embarque)
+        finally:
+            self.deploiement_en_cours = False
+        ir.async_delete_issue(self.hass, DOMAIN, "maj_script_echec")
+        await self.async_request_refresh()
+
+    def _planifier_maj_auto(self) -> None:
+        """Une tentative par version et par démarrage : en cas d'échec, pas de
+        boucle de redéploiement, une alerte de réparation à la place."""
+        if not self.entree.options.get(CONF_MAJ_AUTO, True):
+            return
+        if (not self.version_embarquee or self.script_a_jour or self.deploiement_en_cours
+                or self._id_script is None or self._maj_tentee == self.version_embarquee):
+            return
+        self._maj_tentee = self.version_embarquee
+        self.hass.async_create_task(self._maj_auto())
+
+    async def _maj_auto(self) -> None:
+        avant = self.version_shelly or "antérieure à 1.2.0"
+        _LOGGER.warning("mise à jour du script du Shelly : %s -> %s",
+                        avant, self.version_embarquee)
+        try:
+            await self.async_deployer_script()
+        except ErreurShelly as err:
+            _LOGGER.error("mise à jour du script du Shelly impossible : %s", err)
+            ir.async_create_issue(
+                self.hass, DOMAIN, "maj_script_echec",
+                is_fixable=False, severity=ir.IssueSeverity.ERROR,
+                translation_key="maj_script_echec",
+                translation_placeholders={"version": self.version_embarquee or "?",
+                                          "erreur": str(err)})
 
     async def _repli_si_script_arrete(self, donnees: Donnees, maintenant: float) -> None:
         """Remet la batterie à 0 W si le script du Shelly est arrêté depuis 30 s.
@@ -240,6 +332,13 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         self._store.async_delay_save(self.memoire.en_dict, 60)
         return donnees
 
+    def async_update_listeners(self) -> None:
+        super().async_update_listeners()
+        # Après chaque relevé réussi, self.data est à jour : c'est le moment
+        # de comparer la version du script à celle embarquée.
+        if self.data is not None and self.last_update_success:
+            self._planifier_maj_auto()
+
     async def ecrire_batterie(self, proprietes: dict[str, Any]) -> None:
         """Écrit des propriétés sur la batterie, numéro de série compris."""
         if not self.data or not self.data.sn:
@@ -267,6 +366,12 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
     async def ecrire_kvs(self, cle: str, valeur: Any) -> None:
         await self.shelly.kvs_ecrire(cle, valeur)
         await self.async_request_refresh()
+
+
+def version_du_script(code: str) -> str | None:
+    """Lit « let SCRIPT_VERSION = "x.y.z"; » dans le code du script."""
+    m = re.search(r'let\s+SCRIPT_VERSION\s*=\s*"([^"]+)"', code)
+    return m.group(1) if m else None
 
 
 # Dernières valeurs de la version YAML, par grandeur de la mémoire.

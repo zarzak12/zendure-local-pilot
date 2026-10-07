@@ -132,6 +132,9 @@ class ClientShelly:
                 f"script mal écrit : {len(relu)} caractères relus sur {len(code)}, "
                 f"premier écart au caractère {ecart}. Le script reste arrêté."
             )
+        # « Run on startup » : sans lui, le script ne repartirait pas après une
+        # coupure de courant du Shelly.
+        await self.appel("Script.SetConfig", {"id": ident, "config": {"enable": True}})
         await self.appel("Script.Start", {"id": ident})
         _LOGGER.info("script %s redéployé (%d caractères)", ident, len(code))
 

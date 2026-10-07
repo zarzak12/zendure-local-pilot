@@ -16,6 +16,14 @@ CONF_SHELLY_HOST: Final = "shelly_host"
 CONF_EM_CANAL: Final = "em_canal"
 CONF_NB_PACKS: Final = "nb_packs"
 CONF_MIGRER: Final = "migrer"
+CONF_MAJ_AUTO: Final = "maj_auto_script"
+
+# Script de régulation embarqué dans l'intégration : HACS ne télécharge que
+# custom_components/, c'est donc d'ici qu'il est poussé vers le Shelly.
+# Copie conforme de scripts/zendure_solarflow_4000_mix_pro.js (vérifié par
+# les tests). Le script publie sa version dans le KVS à chaque démarrage.
+SCRIPT_EMBARQUE: Final = "script/zendure.js"
+KVS_VERSION_SCRIPT: Final = "zendure_version"
 
 DEFAUT_NB_PACKS: Final = 4
 
@@ -45,7 +53,7 @@ KVS_REGLAGES: Final = {
     "zendure_smooth": (0, 0.9, 0.1),
 }
 
-KVS_LECTURE_SEULE: Final = ("zendure_ip", "zendure_sn")
+KVS_LECTURE_SEULE: Final = ("zendure_ip", "zendure_sn", "zendure_version")
 
 # ---------------------------------------------------------------------------
 # Composants virtuels du Shelly (réglages courants de la régulation)

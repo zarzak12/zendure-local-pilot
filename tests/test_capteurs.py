@@ -85,6 +85,13 @@ def _prepare_doublures():
             UpdateFailed=type("UpdateFailed", (Exception,), {}))
     _module("homeassistant.helpers.device_registry", DeviceInfo=dict)
     _module("homeassistant.helpers.storage", Store=object)
+    _module("homeassistant.helpers.issue_registry",
+            IssueSeverity=types.SimpleNamespace(WARNING=1, ERROR=2),
+            async_create_issue=lambda *a, **k: None, async_delete_issue=lambda *a, **k: None)
+    _module("homeassistant.exceptions", HomeAssistantError=Exception)
+    _module("homeassistant.components.update",
+            UpdateEntity=type("UpdateEntity", (), {}),
+            UpdateEntityFeature=types.SimpleNamespace(INSTALL=1, PROGRESS=4))
     _module("homeassistant.util")
     sys.modules["homeassistant.util"].__path__ = []
     _module("homeassistant.util.dt", now=None)
@@ -525,10 +532,9 @@ def test_dashboard_integration_a_jour():
 def test_dashboard_integration_n_utilise_que_des_entites_existantes():
     import re
     _module("homeassistant.helpers.entity_registry", RegistryEntry=object, async_get=None)
-    _module("homeassistant.helpers.issue_registry",
-            IssueSeverity=types.SimpleNamespace(WARNING=1), async_create_issue=None)
     _module("homeassistant.helpers.restore_state", RestoreEntity=type("RestoreEntity", (), {}))
     _charge("switch")
+    _charge("update")
     existantes = _charge("migration").entites_revendiquees(4)
     with open(_dashboard_integration().CIBLE, encoding="utf-8") as f:
         citees = set(re.findall(
@@ -589,6 +595,51 @@ def test_ecriture_persistante_retablit_smartmode():
         {"smartMode": 1},
     ], faux.ecritures
     assert veilles == [2], "la batterie a besoin d'un délai avant le rétablissement"
+
+
+def test_script_embarque_identique_a_la_reference():
+    """HACS ne télécharge que custom_components/ : c'est la copie embarquée
+    qui part sur le Shelly. Elle doit être exactement le script du dépôt."""
+    embarque = os.path.join(DOSSIER, const.SCRIPT_EMBARQUE)
+    with open(embarque, encoding="utf-8") as f:
+        assert f.read() == _script(), (
+            "copie scripts/zendure_solarflow_4000_mix_pro.js vers "
+            f"custom_components/zendure_local_pilot/{const.SCRIPT_EMBARQUE}")
+
+
+def test_version_du_script_egale_celle_du_manifeste():
+    """Le script publie sa version ; l'intégration la compare à la sienne.
+    Une version de script oubliée à la release ne serait jamais proposée."""
+    import json
+    with open(os.path.join(DOSSIER, "manifest.json"), encoding="utf-8") as f:
+        manifeste = json.load(f)["version"]
+    assert coordinator.version_du_script(_script()) == manifeste
+    assert coordinator.version_du_script("let x = 1;") is None
+
+
+def test_mise_a_jour_automatique_une_fois_par_version():
+    taches = []
+    hass = types.SimpleNamespace(async_create_task=lambda coro: (taches.append(coro), coro.close()))
+
+    def coord(version_shelly, options=None, id_script=1):
+        c = types.SimpleNamespace(
+            hass=hass, entree=types.SimpleNamespace(options=options or {}),
+            version_embarquee="1.2.0", version_shelly=version_shelly,
+            deploiement_en_cours=False, _id_script=id_script, _maj_tentee=None,
+            _maj_auto=lambda: asyncio.sleep(0))
+        c.script_a_jour = version_shelly == "1.2.0"
+        return c
+
+    import asyncio
+    planifier = coordinator.CoordinateurZendure._planifier_maj_auto
+    c = coord(None)                     # script antérieur, sans version publiée
+    planifier(c)
+    planifier(c)                        # pas de seconde tentative pour la même version
+    assert len(taches) == 1
+    planifier(coord("1.2.0"))           # déjà à jour
+    planifier(coord("1.1.0", options={const.CONF_MAJ_AUTO: False}))   # désactivée
+    planifier(coord("1.1.0", id_script=None))                         # script introuvable
+    assert len(taches) == 1
 
 
 def test_repli_a_zero_si_le_script_s_arrete():

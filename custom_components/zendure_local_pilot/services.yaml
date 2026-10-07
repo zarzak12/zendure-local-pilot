@@ -59,7 +59,6 @@ reset_health:
 redeploy_script:
   fields:
     chemin:
-      required: true
       example: /config/www/zendure_solarflow.js
       selector:
         text:

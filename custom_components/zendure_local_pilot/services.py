@@ -17,6 +17,7 @@ from homeassistant.helpers import config_validation as cv
 from .calculs import echelle_soc
 from .const import DOMAIN, LIMITE_REPLI, VC_CHARGE_MAX, VC_DECHARGE_MAX
 from .coordinator import CoordinateurZendure, Donnees
+from .shelly import ErreurShelly
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ SCHEMA_RESET_SANTE = vol.Schema({**_BASE})
 
 SCHEMA_REDEPLOYER = vol.Schema({
     **_BASE,
-    vol.Required("chemin"): cv.string,
+    vol.Optional("chemin"): cv.string,
 })
 
 
@@ -157,7 +158,14 @@ def enregistrer_services(hass: HomeAssistant) -> None:
             raise HomeAssistantError(
                 "Aucun script de régulation n'a été repéré sur le Shelly."
             )
-        chemin = appel.data["chemin"]
+        chemin = appel.data.get("chemin")
+        if not chemin:
+            # Sans chemin : le script embarqué dans l'intégration.
+            try:
+                await coord.async_deployer_script()
+            except ErreurShelly as err:
+                raise HomeAssistantError(f"Redéploiement impossible : {err}") from err
+            return
         if not hass.config.is_allowed_path(chemin):
             raise HomeAssistantError(
                 f"{chemin} n'est pas dans un dossier autorisé "

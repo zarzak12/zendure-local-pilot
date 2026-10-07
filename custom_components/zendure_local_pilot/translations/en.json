@@ -29,7 +29,11 @@
         "title": "Zendure Local Pilot settings",
         "data": {
           "shelly_host": "Shelly IP address",
-          "nb_packs": "Number of battery packs"
+          "nb_packs": "Number of battery packs",
+          "maj_auto_script": "Update the Shelly script automatically"
+        },
+        "data_description": {
+          "maj_auto_script": "When a new version of the integration brings a new regulation script, push it to the Shelly by itself. Your settings are kept. Disable it if you modified the script by hand."
         }
       }
     }
@@ -38,6 +42,10 @@
     "packages_yaml_encore_charges": {
       "title": "The YAML packages are still loaded",
       "description": "{nombre} entities had to fall back to an identifier ending in _2, because the YAML packages still own the original ones. Your history and dashboards point at the old entities, which no longer update. Remove the zendure_solarflow4000mix*.yaml files from your packages folder, restart Home Assistant, then reload this integration."
+    },
+    "maj_script_echec": {
+      "title": "The Shelly script could not be updated",
+      "description": "Version {version} of the regulation script could not be pushed to the Shelly: {erreur}. If the script stayed stopped, the battery was set back to 0 W. Check the Shelly, then use the script update in Settings → Updates."
     }
   },
   "entity": {
@@ -153,12 +161,13 @@
         }
       }
     },
-    "redeploy_script": {      "name": "Redeploy the Shelly script",
-      "description": "Rewrites the regulation script from a local file, in chunks, then reads it back in full and compares. The Shelly web editor silently truncates large scripts; this service does not.",
+    "redeploy_script": {
+      "name": "Redeploy the Shelly script",
+      "description": "Rewrites the regulation script in chunks, then reads it back in full and compares. Without a path, pushes the script bundled with the integration. The Shelly web editor silently truncates large scripts; this action does not.",
       "fields": {
         "chemin": {
           "name": "File path",
-          "description": "Path to the script, inside a directory allowed by allowlist_external_dirs."
+          "description": "Optional. Without a path, the script bundled with the integration is pushed. With a path, the file must be in a directory allowed by allowlist_external_dirs."
         },
         "entry_id": {
           "name": "Device",

@@ -27,6 +27,7 @@ PLATEFORMES: list[Platform] = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.UPDATE,
 ]
 
 
@@ -45,6 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinateur = CoordinateurZendure(hass, entry)
     await coordinateur.async_charger_memoire()
+    await coordinateur.async_charger_script_embarque()
     await coordinateur.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinateur

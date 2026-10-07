@@ -56,9 +56,11 @@ def entites_revendiquees(nb_packs: int) -> set[str]:
             for d in (*NOMBRES_BATTERIE, *NOMBRES_SHELLY, *_nombres_kvs())}
     ids |= {f"select.{PREFIXE}_{d.key}" for d in CHOIX}
     from .switch import AFFICHAGE
+    from .update import CLE as CLE_MAJ
 
     ids.add(f"switch.{PREFIXE}_regulation")
     ids |= {f"switch.{PREFIXE}_{a[0]}" for a in AFFICHAGE}
+    ids.add(f"update.{PREFIXE}_{CLE_MAJ}")
     return ids
 
 

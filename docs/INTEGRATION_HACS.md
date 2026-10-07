@@ -74,6 +74,32 @@ pour le déploiement du script.
 Pour **ajouter** ces vues à un tableau de bord existant plutôt que le
 remplacer, ne colle que le contenu de la clé `views:` à la suite des tiennes.
 
+## Mise à jour du script du Shelly
+
+Le script de régulation est **embarqué dans l'intégration**. Une mise à jour
+par HACS apporte donc aussi le nouveau script, et l'intégration le pousse sur
+le Shelly :
+
+- **automatiquement** (par défaut) : dès que l'intégration constate que le
+  Shelly a une version plus ancienne. Une seule tentative par version : en
+  cas d'échec, une alerte apparaît dans **Paramètres → Système →
+  Réparations**, sans nouvelle tentative en boucle ;
+- **ou d'un clic** : l'entité `update.zendure_solarflow4000mix_script_shelly`
+  apparaît dans **Paramètres → Mises à jour** avec un bouton *Installer*.
+
+L'écriture est vérifiée par relecture complète. Tes réglages sont conservés :
+ils vivent dans le KVS et les composants virtuels du Shelly, pas dans le code.
+La régulation s'interrompt quelques secondes pendant l'écriture ; si elle
+échouait, le script resterait arrêté et le repli à 0 W prendrait le relais.
+
+⚠️ **Tu as modifié le script à la main** (profil triphasé, par exemple) ?
+Désactive la mise à jour automatique dans les options de l'intégration
+(**Configurer**), sinon ta modification sera remplacée.
+
+Le **premier** déploiement du script reste à faire comme indiqué dans le
+README (étape 3) : l'intégration a besoin d'un script existant pour savoir
+où écrire.
+
 ## Automatisations
 
 **Il n'y en a aucune à créer.** Celles de la version YAML sont intégrées au
@@ -231,7 +257,7 @@ tu sais ce que tu fais.
 | `zendure_local_pilot.set_limits` | Plafonds de décharge et de charge |
 | `zendure_local_pilot.set_soc` | Bornes de charge, échelle du firmware détectée |
 | `zendure_local_pilot.write_properties` | Écriture brute de propriétés zenSDK |
-| `zendure_local_pilot.redeploy_script` | Redéploiement du script du Shelly, sans troncature |
+| `zendure_local_pilot.redeploy_script` | Redéploiement du script du Shelly, sans troncature ; sans chemin, pousse le script embarqué |
 | `zendure_local_pilot.reset_health` | Réinitialise l'estimation de santé des packs |
 
 ## Deux comportements à connaître

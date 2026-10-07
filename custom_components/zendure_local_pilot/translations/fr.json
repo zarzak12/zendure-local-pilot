@@ -29,7 +29,11 @@
         "title": "Réglages Zendure Local Pilot",
         "data": {
           "shelly_host": "Adresse IP du Shelly",
-          "nb_packs": "Nombre de packs batterie"
+          "nb_packs": "Nombre de packs batterie",
+          "maj_auto_script": "Mettre à jour automatiquement le script du Shelly"
+        },
+        "data_description": {
+          "maj_auto_script": "Quand une nouvelle version de l'intégration apporte un nouveau script de régulation, il est poussé tout seul sur le Shelly. Tes réglages sont conservés. Désactive si tu as modifié le script à la main."
         }
       }
     }
@@ -38,6 +42,10 @@
     "packages_yaml_encore_charges": {
       "title": "Les packages YAML sont encore chargés",
       "description": "{nombre} entités ont dû se rabattre sur un identifiant terminé par _2, parce que les packages YAML détiennent toujours les identifiants d'origine. Ton historique et tes dashboards pointent donc vers les anciennes entités, qui ne se mettent plus à jour. Retire les fichiers zendure_solarflow4000mix*.yaml de ton dossier packages, redémarre Home Assistant, puis recharge cette intégration."
+    },
+    "maj_script_echec": {
+      "title": "Le script du Shelly n'a pas pu être mis à jour",
+      "description": "La version {version} du script de régulation n'a pas pu être poussée sur le Shelly : {erreur}. Si le script est resté arrêté, la batterie a été remise à 0 W. Vérifie le Shelly, puis relance la mise à jour du script dans Paramètres → Mises à jour."
     }
   },
   "entity": {
@@ -153,12 +161,13 @@
         }
       }
     },
-    "redeploy_script": {      "name": "Redéployer le script du Shelly",
-      "description": "Réécrit le script de régulation à partir d'un fichier local, par morceaux, puis le relit en entier et le compare. L'éditeur web du Shelly tronque silencieusement les scripts volumineux ; ce service ne le fait pas.",
+    "redeploy_script": {
+      "name": "Redéployer le script du Shelly",
+      "description": "Réécrit le script de régulation par morceaux, puis le relit en entier et le compare. Sans chemin, pousse le script embarqué dans l'intégration. L'éditeur web du Shelly tronque silencieusement les scripts volumineux ; cette action ne le fait pas.",
       "fields": {
         "chemin": {
           "name": "Chemin du fichier",
-          "description": "Chemin du script, dans un dossier autorisé par allowlist_external_dirs."
+          "description": "Facultatif. Sans chemin, c'est le script embarqué dans l'intégration qui est poussé. Avec un chemin, le fichier doit être dans un dossier autorisé par allowlist_external_dirs."
         },
         "entry_id": {
           "name": "Installation",

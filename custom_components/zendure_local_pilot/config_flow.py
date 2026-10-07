@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_EM_CANAL,
+    CONF_MAJ_AUTO,
     CONF_MIGRER,
     CONF_NB_PACKS,
     CONF_SHELLY_HOST,
@@ -121,6 +122,9 @@ class FluxOptions(OptionsFlow):
                 vol.Required(
                     CONF_NB_PACKS, default=actuel.get(CONF_NB_PACKS, DEFAUT_NB_PACKS)
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=4)),
+                vol.Required(
+                    CONF_MAJ_AUTO, default=actuel.get(CONF_MAJ_AUTO, True)
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

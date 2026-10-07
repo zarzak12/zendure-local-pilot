@@ -632,6 +632,12 @@ Passe le mode en **Manuel** et écris la consigne :
 
 ## Mettre à jour
 
+> **Tu utilises l'intégration HACS ?** Rien de ce qui suit ne te concerne :
+> mets à jour l'intégration dans HACS, redémarre Home Assistant, et le
+> nouveau script est poussé tout seul sur le Shelly (ou d'un clic dans
+> *Paramètres → Mises à jour*). Voir
+> [Mise à jour du script du Shelly](docs/INTEGRATION_HACS.md#mise-à-jour-du-script-du-shelly).
+
 Un correctif a été publié sur GitHub et le projet est déjà installé chez toi ?
 Voici la marche à suivre. **Aucun de tes réglages n'est perdu** — la procédure
 est conçue pour ça, et la section *Ce qui est conservé* plus bas explique
