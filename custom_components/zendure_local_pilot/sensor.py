@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -21,6 +21,7 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfInformation,
     UnitOfPower,
     UnitOfTemperature,
     UnitOfTime,
@@ -108,6 +109,40 @@ def _cumul(suffixe: str, nom: str, lire: Callable[[Memoire], float], **kwargs) -
                "device_class": SensorDeviceClass.ENERGY,
                "state_class": SensorStateClass.TOTAL, **kwargs}
     return _memo(suffixe, nom, lambda m: round(lire(m), 3), **options)
+
+
+def etat_script(script: dict[str, Any] | None) -> str | None:
+    """État lisible du script, d'après Script.GetStatus."""
+    if script is None:
+        return None
+    if script.get("errors"):
+        return "En erreur"
+    return "En marche" if script.get("running") else "Arrêté"
+
+
+def demarrage_shelly(shelly: dict[str, Any], maintenant: datetime) -> datetime | None:
+    """Instant de démarrage du Shelly, arrondi à la minute.
+
+    Recalculé à chaque relevé à partir de l'uptime : sans arrondi, quelques
+    centaines de millisecondes d'écart feraient changer l'état à chaque fois.
+    """
+    uptime = (shelly.get("sys") or {}).get("uptime")
+    if not isinstance(uptime, (int, float)):
+        return None
+    return (maintenant - timedelta(seconds=uptime)).replace(second=0, microsecond=0)
+
+
+def _diag_script(suffixe: str, nom: str, champ: str, unite: str | None,
+                 classe: SensorDeviceClass | None, icone: str) -> DescriptionCapteur:
+    """Grandeur de Script.GetStatus, rangée dans le diagnostic."""
+    return DescriptionCapteur(
+        key=suffixe, name=nom, icon=icone,
+        native_unit_of_measurement=unite, device_class=classe, state_class=MESURE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        valeur=lambda d: d.script[champ],
+        present=lambda d: isinstance((d.script or {}).get(champ), (int, float)),
+        shelly=True,
+    )
 
 
 def _energie_requise(d: Donnees) -> float:
@@ -383,6 +418,46 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
     _memo("jours_depuis_calibration", "jours depuis calibration",
           lambda m: m.jours_depuis_calibration(datetime.now(timezone.utc)),
           native_unit_of_measurement="j", icon="mdi:calendar-clock"),
+    # ---- Script de régulation et Shelly (relevés déjà faits à chaque cycle) ----
+    DescriptionCapteur(
+        key="script_etat", name="script état", icon="mdi:script-text-play",
+        valeur=lambda d: etat_script(d.script),
+        present=lambda d: d.script is not None,
+        attributs=lambda d: {"erreurs": (d.script or {}).get("errors") or [],
+                             "message": (d.script or {}).get("error_msg"),
+                             "id": (d.script or {}).get("id")},
+        shelly=True,
+    ),
+    _diag_script("script_cpu", "script CPU", "cpu", PERCENTAGE, None, "mdi:cpu-64-bit"),
+    _diag_script("script_memoire", "script mémoire utilisée", "mem_used",
+                 UnitOfInformation.BYTES, SensorDeviceClass.DATA_SIZE, "mdi:memory"),
+    _diag_script("script_memoire_pic", "script mémoire pic", "mem_peak",
+                 UnitOfInformation.BYTES, SensorDeviceClass.DATA_SIZE, "mdi:memory"),
+    _diag_script("script_memoire_libre", "script mémoire libre", "mem_free",
+                 UnitOfInformation.BYTES, SensorDeviceClass.DATA_SIZE, "mdi:memory"),
+    DescriptionCapteur(
+        key="script_version", name="script version", icon="mdi:tag",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        valeur=lambda d: str(d.kvs.get("zendure_version")),
+        present=lambda d: bool(d.kvs.get("zendure_version")),
+        shelly=True,
+    ),
+    DescriptionCapteur(
+        key="shelly_demarrage", name="Shelly démarrage", icon="mdi:restart",
+        device_class=SensorDeviceClass.TIMESTAMP, entity_category=EntityCategory.DIAGNOSTIC,
+        valeur=lambda d: demarrage_shelly(d.shelly, datetime.now(timezone.utc)),
+        present=lambda d: demarrage_shelly(d.shelly, datetime.now(timezone.utc)) is not None,
+        shelly=True,
+    ),
+    DescriptionCapteur(
+        key="shelly_wifi_rssi", name="Shelly RSSI Wi-Fi",
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH, state_class=MESURE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        valeur=lambda d: ((d.shelly.get("wifi") or {}).get("rssi")),
+        present=lambda d: isinstance((d.shelly.get("wifi") or {}).get("rssi"), (int, float)),
+        shelly=True,
+    ),
     # ---- Santé des packs ----
     DescriptionCapteur(
         key="sante_min", name="santé minimale", icon="mdi:battery-heart-variant",

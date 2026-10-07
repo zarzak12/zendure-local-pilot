@@ -103,6 +103,61 @@ TEXTES = [
               Zendure a changé.""",
      """l'installation. L'**IP** de la Zendure est découverte par le
               script."""),
+    # Bloc propre à l'intégration : état du script du Shelly et actions
+    ("""          - type: heading
+            heading: Réglages avancés (KVS Shelly)""",
+     f"""          - type: heading
+            heading: Script du Shelly
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.{P}_script_etat
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="error">Script en erreur</ha-alert>{{{{
+              state_attr('sensor.{P}_script_etat', 'message')
+              or 'Le Shelly signale une erreur : consulte la console du script.' }}}}
+            visibility:
+              - condition: state
+                entity: binary_sensor.{P}_script_erreur
+                state: 'on'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>**Relancer** arrête
+              puis redémarre le script sans toucher à son code. **Redéployer**
+              réécrit le script embarqué dans l'intégration, vérifié par
+              relecture : utile si le code du Shelly a été abîmé. Un **CPU à
+              0 %** alors que le script tourne en mode régulé signale un script
+              tronqué.
+            visibility: *vis_help2
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: switch.{P}_regulation
+                name: Régulation
+              - entity: update.{P}_script_shelly
+                name: Version du script
+              - entity: sensor.{P}_script_cpu
+                name: CPU du script
+              - entity: sensor.{P}_script_memoire
+                name: Mémoire utilisée
+              - entity: sensor.{P}_script_memoire_pic
+                name: Mémoire (pic)
+              - entity: sensor.{P}_shelly_demarrage
+                name: Démarrage du Shelly
+              - entity: sensor.{P}_shelly_wifi_rssi
+                name: Signal Wi-Fi du Shelly
+              - entity: button.{P}_relancer_script
+                name: Relancer le script
+              - entity: button.{P}_redeployer_script
+                name: Redéployer le script
+          - type: heading
+            heading: Réglages avancés (KVS Shelly)"""),
     # Les scripts de réglage deviennent des entités modifiables directement
     ("""          - type: tile
             entity: script.zendure_solarflow4000mix_set_soc

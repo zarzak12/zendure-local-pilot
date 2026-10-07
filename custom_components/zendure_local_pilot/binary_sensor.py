@@ -57,6 +57,15 @@ BINAIRES: tuple[DescriptionBinaire, ...] = (
         shelly=True,
     ),
     DescriptionBinaire(
+        # Le Shelly signale ici un plantage, une erreur de syntaxe, un manque
+        # de mémoire… Le message exact est en attribut de « script état ».
+        key="script_erreur",
+        name="Script en erreur",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        valeur=lambda d: bool(d.script.get("errors")) if d.script is not None else None,
+        shelly=True,
+    ),
+    DescriptionBinaire(
         key="en_veille",
         name="En veille",
         icon="mdi:power-sleep",

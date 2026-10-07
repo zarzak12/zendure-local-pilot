@@ -72,7 +72,7 @@ def _prepare_doublures():
     _module("homeassistant.const",
             PERCENTAGE="%", SIGNAL_STRENGTH_DECIBELS_MILLIWATT="dBm",
             UnitOfElectricCurrent=_Enum(), UnitOfElectricPotential=_Enum(),
-            UnitOfEnergy=_Enum(), UnitOfPower=_Enum(),
+            UnitOfEnergy=_Enum(), UnitOfPower=_Enum(), UnitOfInformation=_Enum(),
             UnitOfTemperature=_Enum(), UnitOfTime=_Enum(),
             EntityCategory=_Enum(), Platform=_Enum())
     helpers = _module("homeassistant.helpers")
@@ -89,6 +89,13 @@ def _prepare_doublures():
             IssueSeverity=types.SimpleNamespace(WARNING=1, ERROR=2),
             async_create_issue=lambda *a, **k: None, async_delete_issue=lambda *a, **k: None)
     _module("homeassistant.exceptions", HomeAssistantError=Exception)
+    @dataclasses.dataclass(frozen=True, kw_only=True)
+    class _ButtonDescription(_EntityDescription):
+        pass
+
+    _module("homeassistant.components.button",
+            ButtonEntity=type("ButtonEntity", (), {}),
+            ButtonEntityDescription=_ButtonDescription)
     _module("homeassistant.components.update",
             UpdateEntity=type("UpdateEntity", (), {}),
             UpdateEntityFeature=types.SimpleNamespace(INSTALL=1, PROGRESS=4))
@@ -535,10 +542,12 @@ def test_dashboard_integration_n_utilise_que_des_entites_existantes():
     _module("homeassistant.helpers.restore_state", RestoreEntity=type("RestoreEntity", (), {}))
     _charge("switch")
     _charge("update")
+    _charge("button")
     existantes = _charge("migration").entites_revendiquees(4)
     with open(_dashboard_integration().CIBLE, encoding="utf-8") as f:
         citees = set(re.findall(
-            r"\b((?:sensor|binary_sensor|number|select|switch)\.zendure_solarflow4000mix_\w+)", f.read()))
+            r"\b((?:sensor|binary_sensor|number|select|switch|button|update)"
+            r"\.zendure_solarflow4000mix_\w+)", f.read()))
     inconnues = citees - existantes
     assert not inconnues, f"entités absentes de l'intégration : {sorted(inconnues)}"
 
@@ -595,6 +604,34 @@ def test_ecriture_persistante_retablit_smartmode():
         {"smartMode": 1},
     ], faux.ecritures
     assert veilles == [2], "la batterie a besoin d'un délai avant le rétablissement"
+
+
+def test_etat_du_script_et_du_shelly():
+    d = _donnees(RAPPORT_REEL)
+    d.script = {"id": 1, "running": True, "mem_used": 14200, "mem_peak": 15900,
+                "mem_free": 9000, "cpu": 31}
+    d.shelly = {"sys": {"uptime": 3600}, "wifi": {"rssi": -58}}
+    d.kvs = {"zendure_version": "1.2.0"}
+    assert _valeur("script_etat", d) == "En marche"
+    assert _valeur("script_cpu", d) == 31
+    assert _valeur("script_memoire_pic", d) == 15900
+    assert _valeur("script_version", d) == "1.2.0"
+    assert _valeur("shelly_wifi_rssi", d) == -58
+    debut = _valeur("shelly_demarrage", d)
+    assert debut.second == 0 and debut.microsecond == 0   # arrondi : pas de bruit
+    par_cle = {b.key: b for b in binaires.BINAIRES}
+    assert par_cle["script_erreur"].valeur(d) is False
+    # Script planté : état, binaire de problème et message
+    d.script = {"id": 1, "running": False, "errors": ["crashed"], "error_msg": "Uncaught Error"}
+    assert _valeur("script_etat", d) == "En erreur"
+    assert par_cle["script_erreur"].valeur(d) is True
+    assert _valeur("script_cpu", d) == "INDISPONIBLE"   # absent du statut
+    d.script = {"id": 1, "running": False}
+    assert _valeur("script_etat", d) == "Arrêté"
+    # Statut inconnu : rien d'affirmé
+    d.script = None
+    assert _valeur("script_etat", d) == "INDISPONIBLE"
+    assert par_cle["script_erreur"].valeur(d) is None
 
 
 def test_script_embarque_identique_a_la_reference():

@@ -100,6 +100,31 @@ Le **premier** déploiement du script reste à faire comme indiqué dans le
 README (étape 3) : l'intégration a besoin d'un script existant pour savoir
 où écrire.
 
+## Surveiller et piloter le script du Shelly
+
+Sans ouvrir l'interface du Shelly, l'intégration montre :
+
+| Entité | Ce qu'elle dit |
+|---|---|
+| `sensor.…_script_etat` | *En marche*, *Arrêté* ou *En erreur* ; le message d'erreur du Shelly est en attribut |
+| `binary_sensor.…_script_erreur` | problème signalé par le Shelly (plantage, mémoire, syntaxe…) |
+| `binary_sensor.…_script_shelly` | script en marche |
+| `sensor.…_script_cpu` | charge du script. **0 % alors que le script tourne en mode régulé = script tronqué** |
+| `sensor.…_script_memoire`, `…_script_memoire_pic`, `…_script_memoire_libre` | mémoire du script |
+| `sensor.…_script_version`, `update.…_script_shelly` | version installée, et mise à jour disponible |
+| `sensor.…_shelly_demarrage`, `sensor.…_shelly_wifi_rssi` | dernier démarrage du Shelly, qualité de sa liaison |
+
+Et deux boutons :
+
+- **Relancer le script** : arrêt puis redémarrage, sans toucher au code.
+  L'interruption est brève, la batterie garde sa consigne.
+- **Redéployer le script** : réécrit le script embarqué, vérifié par
+  relecture. À utiliser si le code du Shelly a été abîmé (collage tronqué
+  dans l'éditeur web, par exemple).
+
+Le tableau de bord les réunit dans l'onglet **Réglages**, bloc *Script du
+Shelly*, avec une alerte rouge quand le script est en erreur.
+
 ## Automatisations
 
 **Il n'y en a aucune à créer.** Celles de la version YAML sont intégrées au

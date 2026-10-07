@@ -181,6 +181,18 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
         ir.async_delete_issue(self.hass, DOMAIN, "maj_script_echec")
         await self.async_request_refresh()
 
+    async def async_relancer_script(self) -> None:
+        """Arrête puis redémarre le script, sans toucher à son code.
+
+        L'interruption ne dure qu'un instant, bien en deçà des 30 s du repli
+        à 0 W : la batterie garde sa consigne le temps du redémarrage.
+        """
+        if self._id_script is None:
+            raise ErreurShelly("aucun script de régulation repéré sur le Shelly")
+        await self.shelly.script_arreter(self._id_script)
+        await self.shelly.script_demarrer(self._id_script)
+        await self.async_request_refresh()
+
     def _planifier_maj_auto(self) -> None:
         """Une tentative par version et par démarrage : en cas d'échec, pas de
         boucle de redéploiement, une alerte de réparation à la place."""
@@ -307,6 +319,9 @@ class CoordinateurZendure(DataUpdateCoordinator[Donnees]):
                     "Script.GetStatus", {"id": self._id_script})
         except ErreurShelly as err:
             _LOGGER.debug("état du script indisponible : %s", err)
+            # Script supprimé puis recréé : il a changé d'identifiant. On le
+            # recherchera par son nom au relevé suivant.
+            self._id_script = None
 
         # 2. La batterie, dont l'adresse est publiée par le script.
         ip = str(donnees.kvs.get("zendure_ip") or "").strip()

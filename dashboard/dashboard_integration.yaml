@@ -1429,6 +1429,56 @@ views:
               - entity: number.zendure_solarflow4000mix_delai_veille
                 name: Délai de veille
           - type: heading
+            heading: Script du Shelly
+            heading_style: title
+            badges:
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_script_etat
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="error">Script en erreur</ha-alert>{{
+              state_attr('sensor.zendure_solarflow4000mix_script_etat', 'message')
+              or 'Le Shelly signale une erreur : consulte la console du script.' }}
+            visibility:
+              - condition: state
+                entity: binary_sensor.zendure_solarflow4000mix_script_erreur
+                state: 'on'
+          - type: markdown
+            text_only: true
+            content: >-
+              <ha-alert alert-type="info">Aide</ha-alert>**Relancer** arrête
+              puis redémarre le script sans toucher à son code. **Redéployer**
+              réécrit le script embarqué dans l'intégration, vérifié par
+              relecture : utile si le code du Shelly a été abîmé. Un **CPU à
+              0 %** alors que le script tourne en mode régulé signale un script
+              tronqué.
+            visibility: *vis_help2
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: switch.zendure_solarflow4000mix_regulation
+                name: Régulation
+              - entity: update.zendure_solarflow4000mix_script_shelly
+                name: Version du script
+              - entity: sensor.zendure_solarflow4000mix_script_cpu
+                name: CPU du script
+              - entity: sensor.zendure_solarflow4000mix_script_memoire
+                name: Mémoire utilisée
+              - entity: sensor.zendure_solarflow4000mix_script_memoire_pic
+                name: Mémoire (pic)
+              - entity: sensor.zendure_solarflow4000mix_shelly_demarrage
+                name: Démarrage du Shelly
+              - entity: sensor.zendure_solarflow4000mix_shelly_wifi_rssi
+                name: Signal Wi-Fi du Shelly
+              - entity: button.zendure_solarflow4000mix_relancer_script
+                name: Relancer le script
+              - entity: button.zendure_solarflow4000mix_redeployer_script
+                name: Redéployer le script
+          - type: heading
             heading: Réglages avancés (KVS Shelly)
             heading_style: title
           - type: markdown

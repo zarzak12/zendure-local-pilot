@@ -45,7 +45,7 @@
 // Version du script, publiée dans le KVS (zendure_version) à chaque
 // démarrage : l'intégration Home Assistant la compare à celle qu'elle
 // embarque pour proposer, ou faire, la mise à jour. Même numéro que la release.
-let SCRIPT_VERSION = "1.2.0";
+let SCRIPT_VERSION = "1.3.0";
 let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_em: 0, zendure_tick: 250, zendure_period: 1000,
     zendure_gain: 0.9, zendure_dead: 30, zendure_hyst: 25, zendure_wake: 80, zendure_flip: 8,
     zendure_flipw: 100, zendure_smooth: 0 };
