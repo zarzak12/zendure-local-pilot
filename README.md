@@ -208,6 +208,7 @@ et ne la réveille que si la consigne dépasse le *seuil de réveil*.
 | `packages/zendure_solarflow4000mix_reglages.yaml` | Édition des réglages avancés du Shelly (KVS) depuis HA |
 | `packages/zendure_solarflow4000mix_sante.yaml` | Estimation par la mesure de l'état de santé (SOH) de chaque pack |
 | `dashboard/dashboard HA.yaml` | Dashboard 4 vues : Zendure, Santé, Historique, Réglages |
+| `dashboard/dashboard_integration.yaml` | Le même, pour l'[intégration HACS](docs/INTEGRATION_HACS.md) : à coller tel quel (généré par `tools/generer_dashboard_integration.py`) |
 | `tools/deploy_shelly.ps1` | Téléversement fiable du script dans le Shelly, **avec vérification par relecture** |
 | `tools/personnaliser.ps1` / `.sh` | Génère `dashboard-perso.yaml` adapté à ton Shelly |
 

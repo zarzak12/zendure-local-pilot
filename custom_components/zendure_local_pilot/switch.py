@@ -10,12 +10,21 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .coordinator import CoordinateurZendure
 from .entity import EntiteShelly
+
+# Préférences d'affichage du tableau de bord (ex-input_boolean de la version
+# YAML) : clé, nom, icône, état initial.
+AFFICHAGE = (
+    ("show_help", "Afficher l'aide", "mdi:help-circle", False),
+    ("show_pv", "Afficher le PV", "mdi:solar-power", True),
+)
 
 
 async def async_setup_entry(
@@ -24,7 +33,38 @@ async def async_setup_entry(
     ajouter: AddEntitiesCallback,
 ) -> None:
     coordinateur: CoordinateurZendure = hass.data[DOMAIN][entree.entry_id]
-    ajouter([InterrupteurRegulation(coordinateur)])
+    ajouter([InterrupteurRegulation(coordinateur),
+             *(InterrupteurAffichage(coordinateur, *a) for a in AFFICHAGE)])
+
+
+class InterrupteurAffichage(EntiteShelly, SwitchEntity, RestoreEntity):
+    """Préférence d'affichage : ne pilote rien, sert aux cartes conditionnelles."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinateur: CoordinateurZendure, cle: str, nom: str,
+                 icone: str, defaut: bool) -> None:
+        super().__init__(coordinateur, cle, domaine="switch")
+        self._attr_name = nom
+        self._attr_icon = icone
+        self._attr_is_on = defaut
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (precedent := await self.async_get_last_state()) is not None:
+            self._attr_is_on = precedent.state == "on"
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self._attr_is_on = False
+        self.async_write_ha_state()
 
 
 class InterrupteurRegulation(EntiteShelly, SwitchEntity):

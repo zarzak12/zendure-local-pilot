@@ -16,10 +16,9 @@ L'intégration supprime ces trois corvées :
 
 - installation et mise à jour par HACS ;
 - configuration par formulaire, sans toucher à `configuration.yaml` ;
-- **identifiants d'entités stables**, identiques chez tout le monde : plus
-  besoin de `personnaliser.ps1` pour adapter des identifiants propres à
-  chaque Shelly. (Le tableau de bord du dépôt vise encore les entités de la
-  version YAML, voir [Limites connues](#limites-connues).)
+- **identifiants d'entités stables**, identiques chez tout le monde, donc un
+  tableau de bord qui se colle tel quel. Le script `personnaliser.ps1`
+  devient inutile.
 
 Ce qui **ne change pas** : la régulation continue de tourner **dans le
 Shelly**. L'intégration ne régule pas. Si Home Assistant s'arrête, ou si tu
@@ -50,6 +49,20 @@ Le script de régulation doit **déjà tourner sur le Shelly**. L'intégration l
 vérifie et refuse la configuration s'il est absent : sans lui, il n'y aurait
 rien à superviser et aucune batterie à découvrir. Voir le [README](../README.md)
 pour le déploiement du script.
+
+### Tableau de bord
+
+1. Installe **`apexcharts-card`** par HACS (onglet Frontend), puis vide le
+   cache du navigateur (Ctrl+F5).
+2. Tableau de bord → ✏️ **Modifier** → ⋮ → **Modifier en YAML**.
+3. Colle le contenu de **`dashboard/dashboard_integration.yaml`**, sans rien
+   modifier.
+
+Ce fichier est **généré** à partir du tableau de bord de la version YAML par
+`tools/generer_dashboard_integration.py` : les deux restent identiques, aux
+identifiants près. Ne le modifie pas à la main, modifie la source puis relance
+le générateur (les tests vérifient qu'il est à jour et qu'il ne cite que des
+entités existantes).
 
 ## Formulaire de configuration
 
@@ -158,12 +171,13 @@ tout le monde, et aux installations venues du YAML de garder leur historique.
 |---|---|
 | `select` | Mode de régulation, injection PV, mode secours, pince lue |
 | `number` | Bornes SOC, plafonds onduleur, marges de charge et de décharge, consigne manuelle, délai de veille, réglages fins |
-| `switch` | Régulation (démarre ou arrête le script du Shelly) |
+| `switch` | Régulation (démarre ou arrête le script du Shelly) ; *Afficher l'aide* et *Afficher le PV* (préférences du tableau de bord) |
 | `binary_sensor` | Script en marche, veille, erreur, liaison batterie, réseau connecté, zéro soutirage |
 
-Les réglages fins de la régulation (gain, zone morte, hystérésis…) sont
-désactivés par défaut : active-les dans la page de l'appareil si tu sais ce
-que tu fais.
+Les réglages fins de la régulation (gain, zone morte, hystérésis, délai et
+seuil de bascule, lissage…) sont rangés dans la catégorie *Configuration* de
+l'appareil et dans l'onglet Réglages du tableau de bord. Ne les modifie que si
+tu sais ce que tu fais.
 
 ### Services
 
@@ -195,10 +209,6 @@ deviennent indisponibles.
   et sauvegardés toutes les minutes : une coupure brutale de Home Assistant
   perd au plus une minute de cumul. Un trou de plus de 2 minutes (HA arrêté,
   batterie muette) n'est pas intégré plutôt que d'inventer de l'énergie.
-- **Le tableau de bord du dépôt ne fonctionne pas encore avec
-  l'intégration** : il vise les aides `input_number.*` et les entités du
-  Shelly préfixées `SHELLY_ID`, alors que l'intégration expose des `number.*`
-  et des `select.*` sous `zendure_solarflow4000mix_…`.
 - Les composants virtuels doivent exister sur le Shelly ; ils sont créés par
   le script.
 - La Hyper 2000 reste incompatible : elle n'expose pas le zenSDK.

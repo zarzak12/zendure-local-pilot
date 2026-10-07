@@ -293,8 +293,9 @@ def _nombres_kvs() -> list[DescriptionNombre]:
             native_step=pas,
             native_unit_of_measurement=unite,
             mode=NumberMode.BOX,
+            # Activés : le tableau de bord les affiche dans l'onglet Réglages.
+            # La catégorie CONFIG les tient à l'écart des vues automatiques.
             entity_category=EntityCategory.CONFIG,
-            entity_registry_enabled_default=False,
             valeur=_lire_kvs(cle),
             ecrire=_ecrire_kvs(cle, pas),
             shelly=True,

@@ -42,7 +42,7 @@ jobs:
           python-version: "3.12"
       - run: pip install pyyaml
       - name: Compilation
-        run: python -m compileall -q custom_components tests
+        run: python -m compileall -q custom_components tests tools
       - name: Logique de calcul
         run: python tests/test_calculs.py
       - name: Compteurs, statistiques et santé

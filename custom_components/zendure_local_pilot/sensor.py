@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    EntityCategory,
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfElectricCurrent,
@@ -74,6 +75,7 @@ class DescriptionCapteur(SensorEntityDescription):
     present: Callable[[Donnees], bool] = lambda d: True
     # Mesure issue du Shelly : reste disponible si la batterie ne répond plus.
     shelly: bool = False
+    attributs: Callable[[Donnees], dict[str, Any]] | None = None
 
 
 def _direct(suffixe: str, nom: str, propriete: str, **kwargs) -> DescriptionCapteur:
@@ -128,6 +130,16 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
     DescriptionCapteur(
         key="modele", name="modèle", icon="mdi:tag-outline",
         valeur=lambda d: nom_modele(d.produit),
+        # Chaîne « product » brute et SN : le tableau de bord en a besoin
+        # (image du modèle, identification) sans capteur « raw ».
+        attributs=lambda d: {"produit": d.produit, "sn": d.sn},
+    ),
+    DescriptionCapteur(
+        key="ip", name="adresse IP", icon="mdi:ip-network",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        valeur=lambda d: str(d.kvs.get("zendure_ip") or "") or None,
+        present=lambda d: bool(d.kvs.get("zendure_ip")),
+        shelly=True,
     ),
     # ---- État global ----
     _direct("soc", "SOC", "electricLevel", native_unit_of_measurement=PERCENTAGE,
@@ -517,6 +529,13 @@ class CapteurZendure(EntiteZendure, SensorEntity):
             return self.entity_description.present(self.coordinator.data)
         except (TypeError, ValueError, IndexError, KeyError):
             return False
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        lire = self.entity_description.attributs
+        if lire is None or self.coordinator.data is None:
+            return None
+        return lire(self.coordinator.data)
 
     @property
     def native_value(self) -> Any:

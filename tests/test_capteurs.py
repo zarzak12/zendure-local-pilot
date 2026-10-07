@@ -53,6 +53,7 @@ class _EntityDescription:
     device_class: str | None = None
     state_class: str | None = None
     native_unit_of_measurement: str | None = None
+    entity_category: str | None = None
 
 
 def _prepare_doublures():
@@ -120,7 +121,7 @@ def _prepare_doublures():
     _module("homeassistant.components.select",
             SelectEntity=object, SelectEntityDescription=_SelectDescription)
     _module("homeassistant.components.switch",
-            SwitchDeviceClass=_Enum(), SwitchEntity=object)
+            SwitchDeviceClass=_Enum(), SwitchEntity=type("SwitchEntity", (), {}))
     _module("homeassistant.components.binary_sensor",
             BinarySensorDeviceClass=_Enum(), BinarySensorEntity=object,
             BinarySensorEntityDescription=_BinaryDescription)
@@ -501,6 +502,39 @@ def test_modes_identiques_au_script():
     assert options, "options du mode introuvables dans le script"
     du_script = re.findall(r'"([^"]+)"', options.group(1))
     assert du_script == list(const.MODES), f"script {du_script} / intégration {const.MODES}"
+
+
+def _dashboard_integration():
+    spec = importlib.util.spec_from_file_location(
+        "generateur", os.path.join(RACINE, "tools", "generer_dashboard_integration.py"))
+    generateur = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generateur)
+    return generateur
+
+
+def test_dashboard_integration_a_jour():
+    """Le tableau de bord de l'intégration se dérive de celui du YAML : s'il
+    n'a pas été regénéré après une modification, il diverge en silence."""
+    generateur = _dashboard_integration()
+    with open(generateur.SOURCE, encoding="utf-8") as f:
+        attendu = generateur.generer(f.read())
+    with open(generateur.CIBLE, encoding="utf-8") as f:
+        assert f.read() == attendu, "lance tools/generer_dashboard_integration.py"
+
+
+def test_dashboard_integration_n_utilise_que_des_entites_existantes():
+    import re
+    _module("homeassistant.helpers.entity_registry", RegistryEntry=object, async_get=None)
+    _module("homeassistant.helpers.issue_registry",
+            IssueSeverity=types.SimpleNamespace(WARNING=1), async_create_issue=None)
+    _module("homeassistant.helpers.restore_state", RestoreEntity=type("RestoreEntity", (), {}))
+    _charge("switch")
+    existantes = _charge("migration").entites_revendiquees(4)
+    with open(_dashboard_integration().CIBLE, encoding="utf-8") as f:
+        citees = set(re.findall(
+            r"\b((?:sensor|binary_sensor|number|select|switch)\.zendure_solarflow4000mix_\w+)", f.read()))
+    inconnues = citees - existantes
+    assert not inconnues, f"entités absentes de l'intégration : {sorted(inconnues)}"
 
 
 def test_reglages_kvs_connus_du_script():
