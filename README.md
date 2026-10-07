@@ -11,8 +11,8 @@ Pilotage **entièrement local** d'une batterie **Zendure SolarFlow** via l'API l
 
 Développé sur une **SolarFlow 4000 MIX PRO**, le projet fonctionne sur **tous les appareils
 qui exposent le zenSDK** : SolarFlow 2400 AC / AC+ / Pro, 800 / 800 Plus / 800 Pro,
-1600 AC+, 3000 et 4000 MIX. Les limites de puissance sont **lues dans la batterie
-elle-même**, il n'y a donc rien à adapter d'un modèle à l'autre.
+1600 AC+, 3000 et 4000 MIX. Rien à adapter d'un modèle à l'autre : la batterie
+bride d'elle-même ce qu'elle ne peut pas fournir.
 Voir [Modèles compatibles](#modèles-compatibles).
 
 > **Pourquoi ce projet ?**
@@ -69,11 +69,17 @@ d'API : mêmes points d'entrée, mêmes noms de propriétés.
 | SolarFlow 1600 AC+ | `solarFlow1600AC+` | 1600 W | 1600 W | |
 | SolarFlow 800 / Plus / Pro | `solarFlow800…` | 800–1200 W | 800–1000 W | |
 
-Les puissances ci-dessus sont **indicatives** : le script ne s'en sert pas. Il lit
-`inverseMaxPower` et `chargeMaxLimit` directement dans la batterie et **ajuste tout seul
-les curseurs de Home Assistant**. Tu ne peux donc jamais demander une puissance que ton
-matériel refusera. Si ta batterie ne renvoie pas ces champs, le projet retombe sur une
-borne de 4000 W sans rien plafonner.
+Les puissances ci-dessus sont **indicatives** : le script ne s'en sert pas. La
+régulation est bornée par les curseurs *Décharge max* et *Charge max* (4000 W par
+défaut), et la batterie bride d'elle-même ce que son matériel ne peut pas fournir.
+Règle ces curseurs à la puissance de ton modèle si tu veux une borne exacte.
+
+> ⚠️ Le script ne s'appuie **pas** sur `inverseMaxPower` et `chargeMaxLimit`. Sur
+> certains modèles ou firmwares, ces champs suivent les consignes que le script
+> vient d'écrire au lieu de rester fixes. Une version précédente les utilisait
+> comme plafonds, ce qui provoquait de fortes oscillations ; elle pouvait aussi
+> abaisser la valeur des curseurs *Décharge max* / *Charge max*. Après la mise à
+> jour, vérifie que ces deux curseurs sont revenus à la valeur que tu souhaites.
 
 De même, la **capacité des packs** est déduite du préfixe de leur numéro de série
 (AB1000, AB2000, AB3000, AIO2400, packs internes I2400 et I8000…), comme le fait
@@ -163,21 +169,29 @@ La consigne est ensuite :
 
 ### Anti-battement charge ↔ décharge
 
-Inverser le sens de la batterie coûte un cycle et de l'énergie. Si la consigne demande de
-passer de la charge à la décharge (ou l'inverse), le script :
+Inverser le sens de la batterie fait commuter le relais de l'onduleur (`acMode`). Écrire
+**0 W**, en revanche, ne le touche pas. Le script s'appuie sur cette différence :
 
-1. écrit **0 W** et démarre une fenêtre d'observation de `zendure_flip` secondes (8 s par défaut) ;
-2. pendant cette fenêtre, la consigne est recalculée **à vide** — `outputHomePower` et
-   `gridInputPower` étant nuls, la mesure du Shelly reflète la vraie consommation de la maison,
-   sans l'influence de la batterie ;
-3. à la fin de la fenêtre, le besoin réel est appliqué, quel qu'il soit.
+1. la référence est l'**état du relais**, pas le signe de la consigne. Une batterie arrêtée
+   à 0 W reste « en charge » ou « en décharge » côté relais ;
+2. une demande dans le sens opposé au relais est ramenée à **0 W** : la batterie s'arrête,
+   le relais ne bouge pas ;
+3. le relais ne bascule que si cette demande se maintient **sans interruption** :
+   `zendure_flip` secondes (8 s par défaut) si elle atteint `zendure_flipw` (100 W par
+   défaut), **cinq fois plus longtemps** sinon. Un petit surplus durable finit donc
+   toujours par être stocké. Pendant l'attente, la batterie est à 0 W : la mesure du
+   Shelly reflète la vraie consommation de la maison.
 
-La fenêtre est **bornée** : la batterie ne peut pas rester bloquée à 0 W même si le besoin
-alterne. Concrètement, deux inversions sont toujours séparées d'au moins `zendure_flip` secondes.
-Mets `0` pour retrouver la bascule immédiate.
+Une maison qui oscille autour de l'équilibre (nuage, appareil qui démarre et s'arrête)
+ne remplit jamais ces deux conditions : la batterie se met à 0 W et attend, sans
+claquement de relais. Un vrai changement de situation (surplus solaire durable, gros
+appareil allumé) bascule après `zendure_flip` secondes.
 
-> 💡 Ce délai ne s'applique **qu'aux inversions de sens**, jamais à une simple variation de
-> puissance dans le même sens, ni au passage par 0 dû à la zone morte.
+Pour encore moins de bascules, augmente `zendure_flip` (30–60 s) et/ou `zendure_flipw`
+(200–300 W). Mets `zendure_flip` à `0` pour désactiver la protection.
+
+> 💡 Cette protection ne concerne **que les inversions de sens**. Dans un même sens, la
+> puissance suit la maison librement, toujours bornée par *Décharge max* et *Charge max*.
 
 Après N minutes à 0 W, le script passe la Zendure en **veille profonde** (`smartMode: 0`)
 et ne la réveille que si la consigne dépasse le *seuil de réveil*.
@@ -260,7 +274,7 @@ et ne la réveille que si la consigne dépasse le *seuil de réveil*.
 
    > 💡 Le champ `product` t'indique ton modèle exact. S'il apparaît dans
    > [Modèles compatibles](#modèles-compatibles), tu n'as **aucune adaptation à faire** :
-   > puissances maximales et capacité des batteries sont détectées automatiquement.
+   > la capacité des batteries est détectée automatiquement.
 
 > 💡 **Trouver l'IP de la Zendure** (utile seulement pour ce test) : elle
 > s'annonce en mDNS sous `Zendure-<Modèle>-<12 derniers caractères MAC>`.
@@ -700,7 +714,9 @@ Puis redéploie. Tes réglages, eux, n'ont pas bougé.
 | `zendure_dead` | `..._zone_morte` | 30 W | 0–200 | consigne forcée à 0 en dessous |
 | `zendure_hyst` | `..._hysteresis` | 25 W | 0–200 | écart minimal avant réécriture |
 | `zendure_wake` | `..._seuil_reveil` | 80 W | 0–500 | consigne nécessaire pour sortir de veille |
-| `zendure_flip` | `..._delai_bascule` | 8 s | 0–300 | pause à 0 W avant d'inverser charge ↔ décharge (0 = désactivé) |
+| `zendure_flip` | `..._delai_bascule` | 8 s | 0–300 | durée pendant laquelle une demande inverse doit se maintenir avant de basculer le relais charge ↔ décharge (0 = protection désactivée) |
+| `zendure_flipw` | `..._seuil_bascule` | 100 W | 0–1000 | demande inverse à partir de laquelle la bascule se confirme en `zendure_flip` secondes ; en dessous, l'attente est cinq fois plus longue |
+| `zendure_smooth` | `..._lissage` | 0 | 0–0,9 | lissage de la consigne (0 = désactivé). Essaie 0,7 si des appareils qui consomment par à-coups (induction, four) font osciller le compteur ; la réaction aux gros appareils ralentit de quelques secondes |
 
 Ces clés sont relues **immédiatement** (événement `kvs_rev`) et, par sécurité, toutes les 60 s.
 
@@ -1025,7 +1041,7 @@ deux options :
 - Oscillations (la consigne fait le yo-yo) → **baisse le gain** (0,5) et/ou **augmente la période**.
 - Réaction trop lente aux gros appareils → **monte le gain** (0,9) et **baisse la période** (1 s).
 - Écritures trop fréquentes (usure) → **monte l'hystérésis** (50 W).
-- Battements charge/décharge → **monte le délai de bascule** (60–120 s) et/ou la zone morte.
+- Battements charge/décharge → **monte le délai de bascule** (30–60 s) et/ou le **seuil de bascule** (200–300 W).
 
 ### Debug du script
 

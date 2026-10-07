@@ -103,6 +103,26 @@ input_number:
     step: 5
     mode: box
     unit_of_measurement: s
+  # Demande inverse à partir de laquelle une bascule charge <-> décharge se
+  # confirme en « délai de bascule » secondes. En dessous, l'attente est
+  # cinq fois plus longue.
+  zendure_solarflow4000mix_seuil_bascule:
+    name: Zendure seuil de bascule
+    icon: mdi:swap-horizontal-bold
+    min: 0
+    max: 1000
+    step: 10
+    mode: box
+    unit_of_measurement: W
+  # Lissage de la consigne, 0 = désactivé. Utile si des appareils qui
+  # consomment par à-coups (induction, four) font osciller le compteur.
+  zendure_solarflow4000mix_lissage:
+    name: Zendure lissage
+    icon: mdi:chart-bell-curve-cumulative
+    min: 0
+    max: 0.9
+    step: 0.1
+    mode: slider
 
 # ---- Lecture de la config actuelle dans le Shelly ----
 rest:
@@ -189,7 +209,13 @@ automation:
         data: {value: "{{ cfg.zendure_wake | default(80) | float }}"}
       - action: input_number.set_value
         target: {entity_id: input_number.zendure_solarflow4000mix_delai_bascule}
-        data: {value: "{{ cfg.zendure_flip | default(30) | float }}"}
+        data: {value: "{{ cfg.zendure_flip | default(8) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_seuil_bascule}
+        data: {value: "{{ cfg.zendure_flipw | default(100) | float }}"}
+      - action: input_number.set_value
+        target: {entity_id: input_number.zendure_solarflow4000mix_lissage}
+        data: {value: "{{ cfg.zendure_smooth | default(0) | float }}"}
 
   # HA -> Shelly : chaque modification est poussée dans le KVS
   - id: zendure_solarflow4000mix_reglages_vers_shelly
@@ -224,6 +250,12 @@ automation:
       - trigger: state
         entity_id: input_number.zendure_solarflow4000mix_delai_bascule
         id: zendure_flip
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_seuil_bascule
+        id: zendure_flipw
+      - trigger: state
+        entity_id: input_number.zendure_solarflow4000mix_lissage
+        id: zendure_smooth
     conditions:
       - condition: template
         value_template: >-
@@ -237,7 +269,7 @@ automation:
           value: >-
             {% if trigger.id == 'zendure_ip' %}{{ raw }}
             {% elif trigger.id == 'zendure_period' %}{{ (raw | float * 1000) | int }}
-            {% elif trigger.id == 'zendure_gain' %}{{ raw | float }}
+            {% elif trigger.id in ['zendure_gain', 'zendure_smooth'] %}{{ raw | float }}
             {% else %}{{ raw | float | int }}{% endif %}
       - action: rest_command.zendure_solarflow4000mix_kvs_set
         data:

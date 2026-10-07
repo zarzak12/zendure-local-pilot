@@ -1472,6 +1472,10 @@ views:
                 name: Seuil de réveil
               - entity: input_number.zendure_solarflow4000mix_delai_bascule
                 name: Délai de bascule
+              - entity: input_number.zendure_solarflow4000mix_seuil_bascule
+                name: Seuil de bascule
+              - entity: input_number.zendure_solarflow4000mix_lissage
+                name: Lissage
       - type: grid
         cards:
           - type: heading

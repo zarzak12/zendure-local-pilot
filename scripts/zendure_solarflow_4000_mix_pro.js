@@ -4,8 +4,8 @@
 // SolarFlow 4000 MIX PRO / MIX AC+, 3000 MIX AC+, 2400 AC / AC+ / Pro,
 // 1600 AC+, 800 / 800 Plus / 800 Pro. Ils partagent le même contrat d'API
 // (/properties/report et /properties/write, mêmes noms de propriétés).
-// Les plafonds de puissance ne sont pas codés en dur : ils sont lus dans le
-// rapport de la batterie (inverseMaxPower / chargeMaxLimit).
+// Les plafonds de puissance sont ceux des curseurs « décharge max » et
+// « charge max » : la batterie bride d'elle-même ce qu'elle ne peut pas fournir.
 //
 // NON compatible avec le Hyper 2000, qui n'expose aucun serveur HTTP local
 // (pilotage cloud/MQTT uniquement, confirmé par Zendure : zenSDK issues 18 et 61).
@@ -18,7 +18,8 @@
 //
 // Paramètres avancés stockés dans le KVS du Shelly (modifiables depuis HA ou par URL) :
 //   zendure_ip, zendure_sn, zendure_em (0-2), zendure_tick (ms), zendure_period (ms),
-//   zendure_gain, zendure_dead (W), zendure_hyst (W), zendure_wake (W), zendure_flip (s)
+//   zendure_gain, zendure_dead (W), zendure_hyst (W), zendure_wake (W), zendure_flip (s),
+//   zendure_flipw (W), zendure_smooth (0-0.9, lissage de la consigne, 0 = désactivé)
 // Exemple : http://IP_SHELLY/rpc/KVS.Set?key="zendure_gain"&value=0.6
 //
 // L'IP de la Zendure n'a pas besoin d'être exacte : elle sert de point de départ.
@@ -42,15 +43,18 @@
 // La renseigner ici fait juste gagner les ~30 s de recherche au tout 1er
 // démarrage. Idem pour zendure_sn, appris au premier contact.
 let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_em: 0, zendure_tick: 250, zendure_period: 1000,
-    zendure_gain: 0.9, zendure_dead: 30, zendure_hyst: 25, zendure_wake: 80, zendure_flip: 8 };
+    zendure_gain: 0.9, zendure_dead: 30, zendure_hyst: 25, zendure_wake: 80, zendure_flip: 8,
+    zendure_flipw: 100, zendure_smooth: 0 };
 let CFG = { ip: DEFAULTS.zendure_ip, sn: DEFAULTS.zendure_sn, em: DEFAULTS.zendure_em,
     tick: DEFAULTS.zendure_tick, period: DEFAULTS.zendure_period,
     gain: DEFAULTS.zendure_gain, dead: DEFAULTS.zendure_dead, hyst: DEFAULTS.zendure_hyst,
-    wake: DEFAULTS.zendure_wake, flip: DEFAULTS.zendure_flip };
+    wake: DEFAULTS.zendure_wake, flip: DEFAULTS.zendure_flip, flipw: DEFAULTS.zendure_flipw,
+    smooth: DEFAULTS.zendure_smooth };
+let tSmooth = null;   // consigne lissée (zendure_smooth)
 let DEBUG = false;   // true pour tracer chaque cycle dans la console
 let lastMode = null, tickTmr = null, pollTmr = null;
 let zeroSince = null, standby = false;
-let flipSince = null, flipDir = 0;   // pause d'observation avant inversion charge <-> décharge
+let flipSince = null;   // début de la demande soutenue dans le sens opposé au relais
 
 // ---- Instantané de l'état Zendure ----
 // Z.gen suit writeGen : un instantané antérieur à la dernière écriture décrit un
@@ -63,7 +67,7 @@ let Z = null, ticks = 0, idleTicks = 0;
 // zFail compte les lectures ratées d'affilée ; au-delà de SCAN_AFTER on part
 // en exploration. Le SN est l'unique identifiant stable de la Zendure (sa MAC
 // est aléatoire), il est appris tout seul au premier contact réussi.
-let zFail = 0, scanning = false, scanStep = 0, scanBase = 0, scanPrefix = "", idlePoll = 0;
+let zFail = 0, scanning = false, scanStep = 0, scanBase = 0, scanPrefix = "", idlePoll = 0, scanRetry = 0;
 let SCAN_AFTER = 5;
 let zBusy = false, wBusy = false, writeGen = 0;
 
@@ -84,35 +88,18 @@ function zLock() { zBusy = true; zBusyAt = uptime(); }
 function wLock() { wBusy = true; wBusyAt = uptime(); }
 let lastG = null, wantReg = false, wantG = 0, wantMode = "arret";
 
-// ---- Limites matérielles, déclarées par la batterie ----
-// Chaque modèle a ses propres plafonds (2400 W sur un SolarFlow 2400 AC,
-// 3000 W sur un 4000 MIX PRO, 800 W sur un SolarFlow 800...). Plutôt que de
-// les coder en dur par modèle, on lit ce que la batterie annonce :
-//   inverseMaxPower -> plafond de décharge      chargeMaxLimit -> plafond de charge
-// Ces deux valeurs sont aussi réglables par l'utilisateur ; les respecter
-// revient donc à ne jamais demander une puissance que la batterie refusera.
-// hwD/hwC à 0 = pas encore connu : on n'impose alors aucune limite.
-let hwD = 0, hwC = 0, appD = 0, appC = 0;
+// ---- Limites annoncées par la batterie : tracées, JAMAIS appliquées ----
+// inverseMaxPower / chargeMaxLimit ne sont pas des plafonds fiables : sur
+// certains modèles ou firmwares, ils suivent les consignes que ce script vient
+// lui-même d'écrire. Les appliquer refermait la limite sur la consigne en
+// cours, puis la rouvrait d'un coup : oscillations de forte amplitude,
+// constatées chez les utilisateurs. Aligner les curseurs dessus provoquait en
+// outre une écriture flash (Number.SetConfig) à chaque variation, et pouvait
+// abaisser durablement la valeur des curseurs. On se contente de les tracer.
+let hwD = 0, hwC = 0;
 
 function plausible(v) {
     return typeof v === "number" && v > 0 && v <= 10000;
-}
-
-// Aligne les curseurs du Shelly sur les plafonds réels de la batterie.
-// Number.SetConfig écrit en flash : on ne le fait que si la limite a bougé,
-// jamais à chaque cycle.
-function syncLimits() {
-    if (appD === hwD && appC === hwC) return;
-    appD = hwD; appC = hwC;
-    let d = hwD > 0 ? hwD : 4000, c = hwC > 0 ? hwC : 4000;
-    VC[1].config.max = d;
-    VC[2].config.max = c;
-    VC[3].config.min = -c;
-    VC[3].config.max = d;
-    print("Zendure: plafonds matériels - décharge", d, "W, charge", c, "W");
-    for (let i = 1; i <= 3; i++) {
-        Shelly.call(rpc(VC[i].type, "SetConfig"), { id: VC[i].config.id, config: VC[i].config });
-    }
 }
 
 function readLimits(p) {
@@ -120,7 +107,7 @@ function readLimits(p) {
     let c = plausible(p.chargeMaxLimit) ? p.chargeMaxLimit : hwC;
     if (d === hwD && c === hwC) return;
     hwD = d; hwC = c;
-    syncLimits();
+    if (DEBUG) print("Zendure: limites annoncées - décharge", d, "W, charge", c, "W");
 }
 
 // ---- Composants virtuels (réglages courants, visibles dans HA) ----
@@ -192,6 +179,8 @@ function applyCfg(m) {
     CFG.hyst   = num(m.zendure_hyst, CFG.hyst, 0, 200);
     CFG.wake   = num(m.zendure_wake, CFG.wake, 0, 500);
     CFG.flip   = Math.round(num(m.zendure_flip, CFG.flip, 0, 300));
+    CFG.flipw  = num(m.zendure_flipw, CFG.flipw, 0, 1000);
+    CFG.smooth = num(m.zendure_smooth, CFG.smooth, 0, 0.9);
     if (tickTmr !== null && (CFG.tick !== oldTick || CFG.period !== oldPeriod)) startTimers();
     // lastG sert à repérer l'arrivée d'une mesure fraîche ; après un changement
     // de canal il décrit une autre pince, et une valeur identique par hasard
@@ -342,6 +331,10 @@ function uptime() {
     return lastUp;
 }
 
+function n0(v) {
+    return (typeof v === "number" && !isNaN(v)) ? v : 0;
+}
+
 function gridPower() {
     let s = Shelly.getComponentStatus("em1", CFG.em);
     return (s && typeof s.act_power === "number") ? s.act_power : null;
@@ -448,9 +441,11 @@ function fetchZ() {
         zFail = 0;
         // Premier contact : on mémorise le SN, seule clé stable pour la retrouver
         if (CFG.sn === "" && d.sn) { CFG.sn = d.sn; Shelly.call("KVS.Set", { key: "zendure_sn", value: d.sn }); }
-        Z = { sn: d.sn, cur: p.outputLimit - p.inputLimit,
-              acNow: p.outputHomePower - p.gridInputPower, acMode: p.acMode,
-              lim: p.socLimit % 16, gen: gen, tick: ticks };
+        // n0 : un champ absent du rapport (modèle ou firmware qui l'omet) donnerait
+        // NaN, et la consigne retomberait silencieusement à 0 W à chaque cycle.
+        Z = { sn: d.sn, cur: n0(p.outputLimit) - n0(p.inputLimit),
+              acNow: n0(p.outputHomePower) - n0(p.gridInputPower), acMode: p.acMode,
+              lim: n0(p.socLimit) % 16, gen: gen, tick: ticks };
         readLimits(p);
         if (wantReg) {
             wantReg = false;
@@ -557,20 +552,26 @@ function startScan() {
 function scanNext() {
     if (zBusy) return;
     // Anneaux concentriques autour de scanBase : n, n+1, n-1, n+2, n-2 ...
+    // Le plus souvent, la batterie a juste eu un trou Wi-Fi et revient sur la
+    // même adresse alors que le balayage l'a déjà dépassée. Sans nouvel essai,
+    // la régulation resterait suspendue tout le balayage (~10 min), batterie
+    // figée sur sa dernière consigne. On retente donc l'adresse connue toutes
+    // les ~20 s ; host = -2 la désigne.
     let host = -1;
-    while (scanStep < 512) {
+    if (validIp(CFG.ip) && uptime() - scanRetry >= 20) { scanRetry = uptime(); host = -2; }
+    while (host === -1 && scanStep < 512) {
         let s = scanStep;
         scanStep++;
         let off = (s % 2 === 0) ? s / 2 : -(s + 1) / 2;
         let h = scanBase + off;
         if (h >= 1 && h <= 254) { host = h; break; }
     }
-    if (host < 0) {
+    if (host === -1) {
         scanning = false; scanStep = 0; zFail = 0;
         print("Zendure: recherche infructueuse, nouvelle tentative plus tard");
         return;
     }
-    let ip = scanPrefix + JSON.stringify(host);
+    let ip = (host === -2) ? CFG.ip : scanPrefix + JSON.stringify(host);
     zLock();
     Shelly.call("HTTP.GET", { url: "http://" + ip + "/properties/report", timeout: 2 }, function (r, e) {
         zBusy = false;
@@ -596,12 +597,9 @@ function decide(g, mode, z) {
     // cycle a abouti, même sans écriture.
     lastOk = uptime();
     let regulated = (mode === "autoconso" || mode === "charge_seule" || mode === "decharge_seule");
+    if (!regulated || CFG.smooth <= 0) tSmooth = null;
     let cur = z.cur;
     let dMax = val(VC[1].key, 4000), cMax = val(VC[2].key, 4000);
-    // Le plafond annoncé par la batterie prime : demander plus serait refusé,
-    // et ferait croire à la régulation qu'elle dispose d'une marge inexistante.
-    if (hwD > 0) dMax = Math.min(dMax, hwD);
-    if (hwC > 0) cMax = Math.min(cMax, hwC);
     let t;
 
     if (mode === "arret") t = 0;
@@ -614,32 +612,54 @@ function decide(g, mode, z) {
         t = acNow + (g - buf) * CFG.gain;
         if (mode === "charge_seule") t = Math.min(t, 0);
         if (mode === "decharge_seule") t = Math.max(t, 0);
+        // Lissage optionnel (CFG.smooth, 0 = désactivé). La boucle a 1 à 2 s de
+        // retard : un appareil qui consomme par à-coups de quelques secondes
+        // (induction, thermostat de four) est poursuivi à contretemps, et la
+        // fluctuation réseau est alors amplifiée au lieu d'être compensée.
+        // Lisser la consigne renonce à ces à-coups pour ne plus les aggraver.
+        if (CFG.smooth > 0) {
+            tSmooth = (tSmooth === null) ? t : tSmooth + (t - tSmooth) * (1 - CFG.smooth);
+            t = tSmooth;
+        }
         // SOC en butée : décharger à SOC min (2) ou charger à SOC max (1) ne sert à rien
         if ((t > 0 && z.lim === 2) || (t < 0 && z.lim === 1)) t = 0;
     }
 
+    // Plafonds réglés par l'utilisateur (curseurs décharge max / charge max) :
+    // aucune consigne, manuelle comprise, ne peut les dépasser.
     t = Math.round(Math.max(-cMax, Math.min(dMax, t)));
     if (mode !== "manuel" && Math.abs(t) < CFG.dead) t = 0;
 
-    // ---- Temporisation d'inversion charge <-> décharge ----
-    // Avant d'inverser le sens, on repasse à 0 W et on observe le réseau
-    // pendant CFG.flip secondes. La consigne étant recalculée à vide, on
-    // applique ensuite le besoin réel — plus de battement charge/décharge.
+    // ---- Protection du relais charge <-> décharge ----
+    // Le relais de l'onduleur ne bascule que lorsqu'on change acMode. Écrire
+    // 0 W ne le touche pas : on peut donc arrêter la batterie sans le solliciter.
+    // La référence est l'état du RELAIS (acMode), pas le signe de la consigne :
+    // une batterie à 0 W reste « en décharge » ou « en charge » côté relais, et
+    // c'est en repartant de 0 W dans l'autre sens que naissaient les bascules
+    // intempestives quand la maison oscillait autour de l'équilibre.
+    // Une demande dans le sens opposé au relais est donc ramenée à 0 W tant
+    // qu'elle n'a pas tenu sans interruption : CFG.flip secondes si elle atteint
+    // CFG.flipw, cinq fois plus longtemps sinon. Aucune n'est bloquée
+    // indéfiniment : un petit surplus durable (entre CFG.dead et CFG.flipw)
+    // serait sinon perdu, et la batterie s'endormirait dessus sans jamais se
+    // réveiller. Une consommation qui fluctue repasse par 0 ou dans le sens du
+    // relais, ce qui remet l'attente à zéro.
     if (regulated && CFG.flip > 0) {
-        let curDir = cur > 0 ? 1 : (cur < 0 ? -1 : 0);
+        let relay = z.acMode === 2 ? 1 : (z.acMode === 1 ? -1 : (cur > 0 ? 1 : (cur < 0 ? -1 : 0)));
         let newDir = t > 0 ? 1 : (t < 0 ? -1 : 0);
-        if (flipSince !== null) {
-            // fenêtre d'observation bornée : on maintient 0 W jusqu'au bout
-            if (uptime() - flipSince >= CFG.flip) { flipSince = null; flipDir = 0; }
-            else { flipDir = newDir; t = 0; }
-        } else if (newDir !== 0 && curDir !== 0 && newDir !== curDir) {
-            flipDir = newDir; flipSince = uptime(); t = 0;
-            print("Zendure: inversion demandée, observation", CFG.flip, "s à 0 W");
-        }
-    } else { flipSince = null; flipDir = 0; }
+        if (relay !== 0 && newDir === -relay) {
+            if (flipSince === null) {
+                flipSince = uptime();
+                print("Zendure: demande inverse de", t, "W - confirmation en cours à 0 W");
+            }
+            let attente = (Math.abs(t) >= CFG.flipw) ? CFG.flip : CFG.flip * 5;
+            if (uptime() - flipSince < attente) t = 0;
+            else { flipSince = null; print("Zendure: demande confirmée, bascule du relais"); }
+        } else flipSince = null;                   // demande retombée ou revenue dans le sens du relais
+    } else flipSince = null;
 
     if (DEBUG) print("mode", mode, "| réseau", g, "W | consigne", t, "W | actuelle", cur,
-        "W | veille", standby, "| bascule", flipSince === null ? "-" : flipDir);
+        "W | relais", z.acMode, "| veille", standby, "| bascule", flipSince === null ? "-" : "en attente");
 
     // ---- Veille profonde (modes régulés uniquement) ----
     if (regulated) {
