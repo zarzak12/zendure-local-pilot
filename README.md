@@ -23,6 +23,30 @@ Voir [Modèles compatibles](#modèles-compatibles).
 
 ---
 
+## Deux façons d'installer
+
+Dans les deux cas, la régulation tourne **dans le Shelly** : les étapes
+[1](#étape-1--activer-lapi-locale-de-la-zendure),
+[2](#étape-2--préparer-le-shelly-pro-3em) et
+[3](#étape-3--installer-le-script-de-régulation-dans-le-shelly) ci-dessous
+(API locale de la Zendure, préparation du Shelly, script de régulation) sont
+**obligatoires**. Seule la partie Home Assistant diffère :
+
+| | **Intégration HACS** (bêta) | **Packages YAML** (stable) |
+|---|---|---|
+| Installation | HACS + un formulaire (l'IP du Shelly) | copie de 4 fichiers + `configuration.yaml` |
+| Intégration Shelly officielle | inutile | requise (étape 4) |
+| Tableau de bord | [`dashboard_integration.yaml`](dashboard/dashboard_integration.yaml), à coller tel quel | à personnaliser avec `tools/personnaliser.ps1` |
+| Mises à jour | par HACS | à la main |
+| Suite des étapes | étapes 1 à 3, puis **[docs/INTEGRATION_HACS.md](docs/INTEGRATION_HACS.md)** | étapes 1 à 7 ci-dessous |
+
+Tu viens des packages YAML et veux passer à l'intégration ? Suis la section
+[Migration](docs/INTEGRATION_HACS.md#migration-depuis-les-packages-yaml) : ton
+historique, tes compteurs d'énergie et la santé mesurée de tes packs sont
+conservés.
+
+---
+
 ## Sommaire
 
 - [Modèles compatibles](#modèles-compatibles)

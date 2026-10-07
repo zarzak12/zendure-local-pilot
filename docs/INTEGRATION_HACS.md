@@ -26,6 +26,17 @@ désinstalles l'intégration, l'autoconsommation continue.
 
 ## Installation
 
+### Nouvelle installation : l'ordre complet
+
+1. **Côté matériel**, étapes 1 à 3 du [README](../README.md#installation-pas-à-pas) :
+   activer l'API locale de la Zendure, préparer le Shelly Pro 3EM, y
+   déployer le script de régulation. Elles sont indispensables :
+   l'intégration supervise le script, elle ne le remplace pas.
+2. **Ignore les étapes 4 à 7 du README**, propres à la version YAML.
+   L'intégration Shelly officielle n'est **pas** nécessaire : l'intégration
+   parle directement au Shelly.
+3. Installe l'intégration (ci-dessous), puis le [tableau de bord](#tableau-de-bord).
+
 ### Par HACS (recommandé)
 
 1. HACS → menu ⋮ → **Dépôts personnalisés**.
@@ -55,8 +66,41 @@ pour le déploiement du script.
 1. Installe **`apexcharts-card`** par HACS (onglet Frontend), puis vide le
    cache du navigateur (Ctrl+F5).
 2. Tableau de bord → ✏️ **Modifier** → ⋮ → **Modifier en YAML**.
-3. Colle le contenu de **`dashboard/dashboard_integration.yaml`**, sans rien
-   modifier.
+3. Colle le contenu de
+   [**`dashboard/dashboard_integration.yaml`**](https://github.com/zarzak12/zendure-local-pilot/blob/integration-hacs/dashboard/dashboard_integration.yaml),
+   sans rien modifier. HACS ne télécharge que l'intégration : prends ce
+   fichier sur GitHub (bouton *Copy raw file*).
+
+Pour **ajouter** ces vues à un tableau de bord existant plutôt que le
+remplacer, ne colle que le contenu de la clé `views:` à la suite des tiennes.
+
+## Automatisations
+
+**Il n'y en a aucune à créer.** Celles de la version YAML sont intégrées au
+code de l'intégration :
+
+| Automatisation YAML | Dans l'intégration |
+|---|---|
+| Script du Shelly arrêté 30 s → batterie à 0 W | repli automatique du coordinateur |
+| Bornes SOC : curseurs ↔ Zendure, dans les deux sens | les curseurs lisent et écrivent directement la batterie |
+| Réglages avancés : HA ↔ KVS du Shelly | les entités lisent et écrivent directement le KVS |
+| IP découverte par le script → HA | relue dans le KVS à chaque relevé |
+| Capacité posée à la première installation | déduite des packs présents, en permanence |
+| Estimation de la santé des packs | calculée à chaque relevé et sauvegardée |
+
+Tes **propres** automatisations, elles, restent les tiennes. Si elles visent
+des entités de la version YAML qui changent de domaine (`input_number.…`,
+`script.zendure_…`, entités Shelly `shellypro3em_…_zendure_…`), remplace-les :
+
+| Avant (YAML) | Après (intégration) |
+|---|---|
+| `select.shellypro3em_…_zendure_mode` | `select.zendure_solarflow4000mix_mode` |
+| `number.shellypro3em_…_zendure_consigne_manuelle` | `number.zendure_solarflow4000mix_consigne_manuelle` |
+| `input_number.zendure_solarflow4000mix_soc_min_consigne` | `number.zendure_solarflow4000mix_soc_min_consigne` |
+| `script.zendure_solarflow4000mix_set_power` | action `zendure_local_pilot.set_power` |
+
+Les options du mode sont les mêmes que dans le script : `arret`,
+`autoconso`, `charge_seule`, `decharge_seule`, `manuel`.
 
 Ce fichier est **généré** à partir du tableau de bord de la version YAML par
 `tools/generer_dashboard_integration.py` : les deux restent identiques, aux
