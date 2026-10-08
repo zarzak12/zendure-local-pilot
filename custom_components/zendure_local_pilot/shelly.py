@@ -80,8 +80,37 @@ class ClientShelly:
         return await self.appel("Shelly.GetDeviceInfo")
 
     async def etat_complet(self) -> dict[str, Any]:
-        """État de tous les composants, y compris les composants virtuels."""
-        return await self.appel("Shelly.GetStatus")
+        """État de tous les composants, composants virtuels compris.
+
+        En firmware 2.x, Shelly.GetStatus ne renvoie PLUS les composants
+        virtuels (mode, curseurs, veille) : ils ne sont lisibles que par
+        Shelly.GetComponents. Constaté en réel sur un Pro 3EM en 2.0.1, où le
+        mode et tous les curseurs restaient « inconnus ».
+        """
+        etat = await self.appel("Shelly.GetStatus") or {}
+        try:
+            etat.update(await self.composants_virtuels())
+        except ErreurShelly as err:
+            # Firmware 1.x ancien sans GetComponents : ils sont alors déjà
+            # dans GetStatus, rien n'est perdu.
+            _LOGGER.debug("composants virtuels via GetComponents indisponibles : %s", err)
+        return etat
+
+    async def composants_virtuels(self) -> dict[str, Any]:
+        """{clé: statut} des composants dynamiques, toutes pages lues."""
+        statuts: dict[str, Any] = {}
+        offset = 0
+        while True:
+            res = await self.appel("Shelly.GetComponents", {
+                "dynamic_only": True, "include": ["status"], "offset": offset})
+            composants = (res or {}).get("components") or []
+            for c in composants:
+                if isinstance(c, dict) and "key" in c and isinstance(c.get("status"), dict):
+                    statuts[c["key"]] = c["status"]
+            offset += len(composants)
+            total = (res or {}).get("total", 0)
+            if not composants or offset >= total:
+                return statuts
 
     # -- magasin clé/valeur (réglages avancés) -----------------------------
 

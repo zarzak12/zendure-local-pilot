@@ -672,6 +672,48 @@ def test_echec_avant_ecriture_relance_l_ancien_script():
     assert "Script.Start" not in faux.appels
 
 
+def test_composants_virtuels_lus_en_firmware_2x():
+    """Firmware 2.x : les composants virtuels ne sont plus dans GetStatus, et
+    GetComponents pagine. Réponses réelles d'un Pro 3EM en 2.0.1."""
+    import asyncio
+
+    class Faux:
+        appels = []
+
+        async def appel(self, m, p=None):
+            self.appels.append((m, p))
+            if m == "Shelly.GetStatus":
+                return {"em1:0": {"act_power": -21.2}, "sys": {"uptime": 10}}
+            if m == "Shelly.GetComponents":
+                tous = [
+                    {"key": "enum:200", "status": {"value": "autoconso", "source": "rpc"}},
+                    {"key": "number:200", "status": {"value": 3000}},
+                    {"key": "number:205", "status": {"value": -10}},
+                ]
+                page = tous[p["offset"]:p["offset"] + 2]     # pages de 2
+                return {"components": page, "offset": p["offset"], "total": len(tous)}
+            return {}
+
+    faux = Faux()
+    client = _client(faux)
+    etat = asyncio.run(client.etat_complet())
+    d = _donnees(RAPPORT_REEL)
+    d.shelly = etat
+    par_cle = {c.key: c for c in choix.CHOIX}
+    assert par_cle["mode"].valeur(d) == "autoconso"
+    assert _controle("decharge_max").valeur(d) == 3000
+    assert _controle("buffer_charge").valeur(d) == -10     # sur la 2e page
+    assert d.reseau == -21.2                               # GetStatus toujours lu
+    # Firmware sans GetComponents : pas d'échec, GetStatus suffit
+    class Ancien(Faux):
+        async def appel(self, m, p=None):
+            if m == "Shelly.GetComponents":
+                raise sys.modules["zlp.shelly"].ErreurShelly("méthode inconnue")
+            return {"enum:200": {"value": "manuel"}}
+    etat = asyncio.run(_client(Ancien()).etat_complet())
+    assert etat["enum:200"]["value"] == "manuel"
+
+
 def test_kvs_lu_quel_que_soit_le_firmware():
     """Firmware 2.x : KVS.GetMany renvoie une LISTE. Constaté en réel sur un
     Pro 3EM en 2.0.1, où l'ancien code faisait échouer l'installation."""
