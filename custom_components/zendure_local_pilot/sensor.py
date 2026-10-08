@@ -204,8 +204,9 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
         device_class=SensorDeviceClass.SIGNAL_STRENGTH, state_class=MESURE,
         # Une valeur positive ou nulle signale une liaison filaire : il n'y a
-        # alors pas de niveau radio à afficher.
-        valeur=lambda d: r if (r := _i(d.proprietes, "rssi")) < 0 else None,
+        # alors pas de niveau radio. Indisponible plutôt qu'« Inconnu ».
+        valeur=lambda d: _i(d.proprietes, "rssi"),
+        present=lambda d: _i(d.proprietes, "rssi") < 0,
     ),
     # ---- Photovoltaïque ----
     _direct("pv", "PV", "solarInputPower", **_W),

@@ -280,7 +280,21 @@ def test_liaison_filaire_sans_rssi():
     # rssi à 0 signale une liaison Ethernet : pas de niveau radio à afficher
     filaire = dict(RAPPORT_REEL)
     filaire["properties"] = {**RAPPORT_REEL["properties"], "rssi": 0}
-    assert _valeur("wifi_rssi", _donnees(filaire)) is None
+    # Indisponible, pas « Inconnu » (constaté en réel sur une batterie en RJ45)
+    assert _valeur("wifi_rssi", _donnees(filaire)) == "INDISPONIBLE"
+
+
+def test_reprise_remonte_jusqu_a_la_derniere_valeur_valide():
+    """Constaté en réel : le capteur YAML est enregistré « indisponible »
+    juste avant son retrait, et seule cette valeur était lue."""
+    from datetime import datetime, timedelta, timezone
+    t0 = datetime(2026, 10, 8, 8, 0, tzinfo=timezone.utc)
+    e = lambda s, minutes: types.SimpleNamespace(state=s, last_updated=t0 + timedelta(minutes=minutes))
+    historique = [e("89.3", 0), e("89.5", 10), e("unavailable", 20), e("unknown", 21)]
+    assert coordinator.derniere_valeur_valide(historique) == "89.5"
+    assert coordinator.derniere_valeur_valide(list(reversed(historique))) == "89.5"   # ordre indifférent
+    assert coordinator.derniere_valeur_valide([e("unavailable", 0)]) is None
+    assert coordinator.derniere_valeur_valide([]) is None
 
 
 def test_modele_sans_photovoltaique():

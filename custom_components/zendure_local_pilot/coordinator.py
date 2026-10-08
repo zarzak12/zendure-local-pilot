@@ -407,6 +407,22 @@ def _sources_yaml() -> dict[str, str]:
     return sources
 
 
+ETATS_REMONTES = 50
+
+
+def derniere_valeur_valide(etats: list[Any]) -> str | None:
+    """La plus récente valeur exploitable d'une liste d'états enregistrés."""
+    valides = [e for e in etats
+               if getattr(e, "state", None) not in (None, "unknown", "unavailable", "")]
+    if not valides:
+        return None
+    # L'ordre renvoyé par l'enregistreur a varié selon les versions : on
+    # s'appuie sur l'horodatage quand il est là, sur la position sinon.
+    if all(getattr(e, "last_updated", None) is not None for e in valides):
+        return max(valides, key=lambda e: e.last_updated).state
+    return valides[-1].state
+
+
 async def _anciennes_valeurs(hass: HomeAssistant) -> dict[str, Any]:
     """État courant si les packages sont encore chargés, sinon l'enregistreur."""
     valeurs: dict[str, Any] = {}
@@ -423,11 +439,15 @@ async def _anciennes_valeurs(hass: HomeAssistant) -> dict[str, Any]:
         from homeassistant.components.recorder import get_instance, history
 
         for cle, entite in manquantes.items():
+            # Plusieurs changements, pas seulement le dernier : pendant la
+            # migration, le capteur YAML est souvent enregistré
+            # « indisponible » juste avant son retrait. Constaté en réel : le
+            # rendement de décharge n'était pas repris pour cette raison.
             derniers = await get_instance(hass).async_add_executor_job(
-                history.get_last_state_changes, hass, 1, entite)
-            for etat in derniers.get(entite, []):
-                if etat.state not in ("unknown", "unavailable", ""):
-                    valeurs[cle] = etat.state
+                history.get_last_state_changes, hass, ETATS_REMONTES, entite)
+            v = derniere_valeur_valide(derniers.get(entite, []))
+            if v is not None:
+                valeurs[cle] = v
     except Exception as err:  # noqa: BLE001
         # La reprise est un confort : son échec ne doit pas bloquer l'installation.
         _LOGGER.warning("reprise des valeurs YAML impossible : %s", err)
