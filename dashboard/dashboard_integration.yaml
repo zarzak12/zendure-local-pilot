@@ -642,6 +642,14 @@ views:
                 color: '#01a180'
                 state_content: [name, state]
                 tap_action: {action: more-info}
+              - type: entity
+                entity: sensor.zendure_solarflow4000mix_bascules_relais_jour
+                name: Relais
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}
           - type: markdown
             text_only: true
             content: >-

@@ -73,6 +73,10 @@ class Memoire:
         self.jour = ""                  # date locale du compteur du jour
         self.commutations_charge = 0
         self.commutations_decharge = 0
+        # Bascules du RELAIS charge <-> décharge (changements d'acMode). À ne
+        # pas confondre avec les commutations, qui comptent aussi chaque
+        # reprise depuis le repos, sans que le relais bouge.
+        self.bascules_relais = 0
         self.zero_soutirage_s = 0.0
         self.rendement_charge: float | None = None
         self.rendement_decharge: float | None = None
@@ -87,11 +91,13 @@ class Memoire:
         self._prec_reseau: tuple[float, bool] | None = None
         self._soc_prec: float | None = None
         self._etat_prec: str | None = None
+        self._ac_mode_prec: int | None = None
 
     # -- persistance ---------------------------------------------------------
 
     _CHAMPS = ("energie_chargee", "energie_dechargee", "energie_pv", "pv_jour", "jour",
-               "commutations_charge", "commutations_decharge", "zero_soutirage_s",
+               "commutations_charge", "commutations_decharge", "bascules_relais",
+               "zero_soutirage_s",
                "rendement_charge", "rendement_decharge", "seaux_charge", "seaux_decharge",
                "derniere_calibration", "packs", "amorcee")
 
@@ -147,6 +153,7 @@ class Memoire:
             self.jour = jour
             self.pv_jour = 0.0
             self.commutations_charge = self.commutations_decharge = 0
+            self.bascules_relais = 0
             self.zero_soutirage_s = 0.0
 
         self._zero_soutirage(donnees.reseau, t)
@@ -182,6 +189,7 @@ class Memoire:
         self._rendements(p, packs, t)
         self._calibration(_f(p, "electricLevel"), maintenant)
         self._commutations(-puissance_batterie_nette(p))
+        self._bascules_relais(p.get("acMode"))
         self._sante(packs)
 
     def _zero_soutirage(self, reseau: float | None, t: float) -> None:
@@ -225,6 +233,15 @@ class Memoire:
             elif etat == "Décharge":
                 self.commutations_decharge += 1
         self._etat_prec = etat
+
+    def _bascules_relais(self, ac_mode: Any) -> None:
+        # Seules 1 (charge) et 2 (décharge) désignent un sens du relais ; une
+        # valeur absente ou autre ne doit ni compter ni effacer la précédente.
+        if ac_mode not in (1, 2):
+            return
+        if self._ac_mode_prec is not None and ac_mode != self._ac_mode_prec:
+            self.bascules_relais += 1
+        self._ac_mode_prec = ac_mode
 
     def _sante(self, packs: list[dict[str, Any]]) -> None:
         """Capacité réelle = énergie DC échangée ÷ variation de SOC × 100."""

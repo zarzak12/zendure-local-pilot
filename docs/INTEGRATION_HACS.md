@@ -220,7 +220,13 @@ l'autre :
 | Énergie | `energie_chargee`, `energie_dechargee`, `energie_pv`, `pv_jour`, `pack_N_energie_dc` |
 | Rendements | `rendement_global`, `rendement_charge`, `rendement_decharge`, `efficacite_*` (instantané et moyenne 7 jours) |
 | Santé des packs | `pack_N_capacite_estimee`, `pack_N_sante`, `sante_min`, `mesure_sante_progression` |
-| Statistiques du jour | `commutations_charge_jour`, `commutations_decharge_jour`, `commutations_jour`, `zero_soutirage_jour` |
+| Statistiques du jour | `commutations_charge_jour`, `commutations_decharge_jour`, `commutations_jour`, `bascules_relais_jour`, `zero_soutirage_jour` |
+
+**Commutations ou bascules ?** `commutations_jour` compte chaque **reprise**
+de charge ou de décharge, y compris depuis le repos : repos → charge → repos
+→ charge font 2 commutations sans que le relais bouge. `bascules_relais_jour`
+ne compte que les **changements de sens du relais** charge ↔ décharge
+(`acMode`) : c'est lui qui renseigne sur l'usure du relais.
 | Calibration | `calibration`, `derniere_calibration`, `jours_depuis_calibration` |
 
 La santé est estimée comme dans la version YAML : énergie DC échangée

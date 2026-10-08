@@ -410,6 +410,9 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
     _memo("commutations_decharge_jour", "commutations décharge jour",
           lambda m: m.commutations_decharge, state_class=MESURE, icon="mdi:swap-vertical-bold",
           native_unit_of_measurement=""),
+    # Le compteur qui intéresse l'usure : changements de sens du relais.
+    _memo("bascules_relais_jour", "bascules relais jour",
+          lambda m: m.bascules_relais, state_class=MESURE, icon="mdi:electric-switch"),
     _memo("commutations_jour", "commutations jour",
           lambda m: m.commutations_charge + m.commutations_decharge,
           state_class=MESURE, icon="mdi:swap-vertical-bold"),

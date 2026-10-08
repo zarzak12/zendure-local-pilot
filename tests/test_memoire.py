@@ -118,6 +118,27 @@ def test_commutations():
     assert (m.commutations_charge, m.commutations_decharge) == (1, 1)
 
 
+def test_bascules_du_relais_distinctes_des_commutations():
+    m = memoire.Memoire()
+    # Repos -> charge -> repos -> charge -> repos : 2 commutations, relais
+    # toujours en charge (acMode 1) : 0 bascule.
+    etats = [{"acMode": 1}, {"acMode": 1, "outputPackPower": 300}, {"acMode": 1},
+             {"acMode": 1, "outputPackPower": 250}, {"acMode": 1}]
+    _rejouer(m, [Releve(p) for p in etats])
+    assert m.commutations_charge == 2 and m.bascules_relais == 0
+    # Charge -> décharge -> charge : 2 bascules du relais
+    t = _rejouer(m, [Releve({"acMode": 2, "packInputPower": 400}),
+                     Releve({"acMode": 1, "outputPackPower": 300})],
+                 depart=T0 + timedelta(minutes=1))
+    assert m.bascules_relais == 2
+    # acMode absent : ni bascule ni oubli du sens connu
+    _rejouer(m, [Releve({}), Releve({"acMode": 1})], depart=t)
+    assert m.bascules_relais == 2
+    # Remis à zéro chaque jour
+    m.mettre_a_jour(Releve({"acMode": 1}), datetime(2026, 6, 22, 0, 0, 1, tzinfo=timezone.utc))
+    assert m.bascules_relais == 0
+
+
 def test_rendements_conservent_la_derniere_mesure():
     m = memoire.Memoire()
     # Charge réseau sans PV : 1000 W pris, 940 W stockés côté DC

@@ -103,6 +103,30 @@ TEXTES = [
               Zendure a changé.""",
      """l'installation. L'**IP** de la Zendure est découverte par le
               script."""),
+    # Les bascules du relais, propres à l'intégration, à côté des commutations
+    # (qui comptent aussi les reprises depuis le repos, sans bascule).
+    ("""                entity: sensor.zendure_solarflow4000mix_commutations_jour
+                name: Aujourd'hui
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {action: more-info}""",
+     f"""                entity: sensor.zendure_solarflow4000mix_commutations_jour
+                name: Aujourd'hui
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {{action: more-info}}
+              - type: entity
+                entity: sensor.{P}_bascules_relais_jour
+                name: Relais
+                show_state: true
+                show_icon: true
+                color: '#01a180'
+                state_content: [name, state]
+                tap_action: {{action: more-info}}"""),
     # Bloc propre à l'intégration : état du script du Shelly et actions
     ("""          - type: heading
             heading: Réglages avancés (KVS Shelly)""",
