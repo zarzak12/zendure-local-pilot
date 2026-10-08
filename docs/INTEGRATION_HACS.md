@@ -33,8 +33,14 @@ désinstalles l'intégration, l'autoconsommation continue.
    déployer le script de régulation. Elles sont indispensables :
    l'intégration supervise le script, elle ne le remplace pas.
 2. **Ignore les étapes 4 à 7 du README**, propres à la version YAML.
-   L'intégration Shelly officielle n'est **pas** nécessaire : l'intégration
-   parle directement au Shelly.
+   L'intégration Shelly officielle n'est **pas** nécessaire à la régulation :
+   l'intégration parle directement au Shelly.
+
+> 💡 **Tu as déjà l'intégration Shelly officielle ? Garde-la.** Tes compteurs
+> d'énergie basés sur la pince (`…_em0_total_active_energy`, compteurs Tempo,
+> cumuls mensuels…) en dépendent. Les deux cohabitent : certains réglages
+> apparaissent simplement en double (`select.shellypro3em_…_zendure_mode` et
+> `select.zendure_solarflow4000mix_mode` pilotent le même composant du Shelly).
 3. Installe l'intégration (ci-dessous), puis le [tableau de bord](#tableau-de-bord).
 
 ### Par HACS (recommandé)

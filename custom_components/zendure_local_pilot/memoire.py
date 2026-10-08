@@ -20,6 +20,7 @@ from .calculs import (
     efficacite_charge,
     efficacite_decharge,
     puissance_batterie_nette,
+    rendement_plausible,
 )
 
 NB_PACKS_MAX = 4
@@ -119,7 +120,9 @@ class Memoire:
         for cle in ("energie_chargee", "energie_dechargee", "energie_pv",
                     "rendement_charge", "rendement_decharge"):
             v = _nombre(valeurs.get(cle))
-            if v is not None:
+            # Un rendement mesuré à trop faible puissance par la version YAML
+            # (35 % en charge, par exemple) ne doit pas être reconduit.
+            if v is not None and (not cle.startswith("rendement") or rendement_plausible(v)):
                 setattr(self, cle, v)
                 reprises.append(cle)
         if isinstance(valeurs.get("derniere_calibration"), str):

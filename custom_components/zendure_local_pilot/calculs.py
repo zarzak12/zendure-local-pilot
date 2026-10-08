@@ -114,6 +114,30 @@ def puissance_dc_packs(packs: list[dict[str, Any]], etat: int) -> int:
     return sum(_entier(p, "power") for p in packs if _entier(p, "state") == etat)
 
 
+# Rendements : conditions de mesure.
+# Sous ~300 W, la consommation propre de l'onduleur (quelques dizaines de
+# watts) écrase le rapport : 60 W pris au réseau pour 21 W stockés donnent
+# 35 %, vrai à cette puissance mais sans rapport avec l'usage normal, et que
+# le capteur « dernière mesure » affichait ensuite pendant des jours.
+# Hors de 60-100 %, la valeur vient d'une rampe où puissances AC et DC n'ont
+# pas été relevées au même instant : elle est écartée.
+RENDEMENT_PUISSANCE_MIN = 300
+RENDEMENT_PLAUSIBLE = (60.0, 100.0)
+
+
+def rendement_plausible(valeur: Any) -> bool:
+    try:
+        v = float(valeur)
+    except (TypeError, ValueError):
+        return False
+    return RENDEMENT_PLAUSIBLE[0] <= v <= RENDEMENT_PLAUSIBLE[1]
+
+
+def _rendement(numerateur: int, denominateur: int) -> float | None:
+    v = round(numerateur / denominateur * 100, 1)
+    return v if rendement_plausible(v) else None
+
+
 def efficacite_charge(p: dict[str, Any], packs: list[dict[str, Any]]) -> float | None:
     """DC réellement stocké ÷ AC pris au réseau, en %. Hors PV seulement.
 
@@ -121,17 +145,17 @@ def efficacite_charge(p: dict[str, Any], packs: list[dict[str, Any]]) -> float |
     réseau et le rapport n'aurait plus de sens.
     """
     entree = _entier(p, "gridInputPower")
-    if entree <= 50 or _entier(p, "solarInputPower") >= 20:
+    if entree < RENDEMENT_PUISSANCE_MIN or _entier(p, "solarInputPower") >= 20:
         return None
-    return round(min(puissance_dc_packs(packs, 1) / entree * 100, 100), 1)
+    return _rendement(puissance_dc_packs(packs, 1), entree)
 
 
 def efficacite_decharge(p: dict[str, Any], packs: list[dict[str, Any]]) -> float | None:
     """AC rendu à la maison ÷ DC tiré des packs, en %. Hors PV seulement."""
     dc = puissance_dc_packs(packs, 2)
-    if dc <= 50 or _entier(p, "solarInputPower") >= 20:
+    if dc < RENDEMENT_PUISSANCE_MIN or _entier(p, "solarInputPower") >= 20:
         return None
-    return round(min(_entier(p, "outputHomePower") / dc * 100, 100), 1)
+    return _rendement(_entier(p, "outputHomePower"), dc)
 
 
 def pv_vers_batterie(p: dict[str, Any]) -> int:

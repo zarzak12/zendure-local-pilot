@@ -234,6 +234,10 @@ template:
               / states('sensor.zendure_solarflow4000mix_energie_chargee') | float * 100) | round(1) }}
 
       # Charge réseau : DC réel des packs (packData.power, state 1) / AC entrant — hors PV
+      # Mesuré seulement à partir de 300 W et retenu seulement entre 60 et 100 % :
+      # sous 300 W, la consommation propre de l'onduleur écrase le rapport
+      # (60 W pris pour 21 W stockés = 35 %), et hors de cette plage la valeur
+      # vient d'une rampe où AC et DC n'ont pas été relevés au même instant.
       - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} efficacite charge"
         unique_id: zendure_solarflow4000mix_efficacite_charge
         default_entity_id: sensor.zendure_solarflow4000mix_efficacite_charge
@@ -241,14 +245,20 @@ template:
         state_class: measurement
         availability: >-
           {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
-          {{ p is mapping and p.gridInputPower | int(0) > 50 and p.solarInputPower | int(0) < 20 }}
+          {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
+          {% if p is mapping and p.gridInputPower | int(0) >= 300 and p.solarInputPower | int(0) < 20 %}
+            {% set dc = packs | selectattr('state','eq',1) | map(attribute='power') | map('int') | sum %}
+            {% set r = dc / p.gridInputPower | int * 100 %}
+            {{ 60 <= r <= 100 }}
+          {% else %}false{% endif %}
         state: >-
           {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
           {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
           {% set dc = packs | selectattr('state','eq',1) | map(attribute='power') | map('int') | sum %}
-          {{ ([dc / p.gridInputPower | int * 100, 100] | min) | round(1) }}
+          {{ (dc / p.gridInputPower | int * 100) | round(1) }}
 
       # Décharge : AC sortant / DC réel des packs (packData.power, state 2) — hors PV
+      # Mêmes conditions que la charge.
       - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} efficacite decharge"
         unique_id: zendure_solarflow4000mix_efficacite_decharge
         default_entity_id: sensor.zendure_solarflow4000mix_efficacite_decharge
@@ -257,13 +267,16 @@ template:
         availability: >-
           {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
           {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
-          {{ p is mapping and p.solarInputPower | int(0) < 20
-             and packs | selectattr('state','eq',2) | map(attribute='power') | map('int') | sum > 50 }}
+          {% set dc = packs | selectattr('state','eq',2) | map(attribute='power') | map('int') | sum %}
+          {% if p is mapping and p.solarInputPower | int(0) < 20 and dc >= 300 %}
+            {% set r = p.outputHomePower | int(0) / dc * 100 %}
+            {{ 60 <= r <= 100 }}
+          {% else %}false{% endif %}
         state: >-
           {% set p = state_attr('sensor.zendure_solarflow4000mix_raw','properties') %}
           {% set packs = state_attr('sensor.zendure_solarflow4000mix_raw','packData') or [] %}
           {% set dc = packs | selectattr('state','eq',2) | map(attribute='power') | map('int') | sum %}
-          {{ ([p.outputHomePower | int(0) / dc * 100, 100] | min) | round(1) }}
+          {{ (p.outputHomePower | int(0) / dc * 100) | round(1) }}
 
       # DC réel des packs (pour l'affichage)
       - name: "{{ 'Zendure ' ~ states('sensor.zendure_solarflow4000mix_modele') if has_value('sensor.zendure_solarflow4000mix_modele') else 'Zendure' }} charge DC"

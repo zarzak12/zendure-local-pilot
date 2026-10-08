@@ -134,6 +134,25 @@ def test_rendements_conservent_la_derniere_mesure():
     assert m.rendement_charge == 94.0
 
 
+def test_rendement_ignore_les_mesures_non_representatives():
+    m = memoire.Memoire()
+    # 60 W pris au réseau pour 21 W stockés : vrai à cette puissance, mais
+    # c'est le talon de l'onduleur qui parle, pas le rendement.
+    m.mettre_a_jour(Releve({"gridInputPower": 60}, [{"state": 1, "power": 21}]), T0)
+    assert m.rendement_charge is None
+    # Rampe : AC déjà monté, DC pas encore -> 35 %, écarté
+    m.mettre_a_jour(Releve({"gridInputPower": 2000}, [{"state": 1, "power": 700}]),
+                    T0 + timedelta(seconds=5))
+    assert m.rendement_charge is None
+    # Plus de 100 % : instants décalés, écarté aussi
+    m.mettre_a_jour(Releve({"outputHomePower": 900}, [{"state": 2, "power": 800}]),
+                    T0 + timedelta(seconds=10))
+    assert m.rendement_decharge is None
+    # La reprise du YAML ne reconduit pas une valeur aberrante
+    m.amorcer({"rendement_charge": "35.5", "rendement_decharge": "89.3"})
+    assert m.rendement_charge is None and m.rendement_decharge == 89.3
+
+
 def test_moyenne_7_jours_oublie_les_vieilles_mesures():
     m = memoire.Memoire()
     m.mettre_a_jour(Releve({"gridInputPower": 1000}, [{"state": 1, "power": 800}]), T0)

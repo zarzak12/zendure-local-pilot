@@ -35,7 +35,7 @@ Dans les deux cas, la régulation tourne **dans le Shelly** : les étapes
 | | **Intégration HACS** (bêta) | **Packages YAML** (stable) |
 |---|---|---|
 | Installation | HACS + un formulaire (l'IP du Shelly) | copie de 4 fichiers + `configuration.yaml` |
-| Intégration Shelly officielle | inutile | requise (étape 4) |
+| Intégration Shelly officielle | inutile pour la régulation ; garde-la si tes compteurs d'énergie (Tempo, cumuls…) l'utilisent | requise (étape 4) |
 | Tableau de bord | [`dashboard_integration.yaml`](dashboard/dashboard_integration.yaml), à coller tel quel | à personnaliser avec `tools/personnaliser.ps1` |
 | Mises à jour | par HACS | à la main |
 | Suite des étapes | étapes 1 à 3, puis **[docs/INTEGRATION_HACS.md](docs/INTEGRATION_HACS.md)** | étapes 1 à 7 ci-dessous |

@@ -98,6 +98,26 @@ def test_puissance_batterie_nette():
     assert calculs.puissance_batterie_nette({}) == 0
 
 
+def test_rendements_seulement_en_conditions_representatives():
+    sans_pv = {"solarInputPower": 0}
+    # 1000 W pris, 940 W stockés : 94 %
+    assert calculs.efficacite_charge({**sans_pv, "gridInputPower": 1000},
+                                     [{"state": 1, "power": 940}]) == 94.0
+    # Sous 300 W : non mesuré
+    assert calculs.efficacite_charge({**sans_pv, "gridInputPower": 60},
+                                     [{"state": 1, "power": 21}]) is None
+    # Hors 60-100 % : écarté, pas plafonné à 100
+    assert calculs.efficacite_charge({**sans_pv, "gridInputPower": 1000},
+                                     [{"state": 1, "power": 1100}]) is None
+    assert calculs.efficacite_decharge({**sans_pv, "outputHomePower": 893},
+                                       [{"state": 2, "power": 1000}]) == 89.3
+    assert calculs.efficacite_decharge({**sans_pv, "outputHomePower": 100},
+                                       [{"state": 2, "power": 200}]) is None
+    # Avec du PV : jamais
+    assert calculs.efficacite_charge({"solarInputPower": 500, "gridInputPower": 1000},
+                                     [{"state": 1, "power": 940}]) is None
+
+
 def test_capacite_totale():
     packs = [{"sn": "BEAAVCADA240984", "packType": 70}]
     assert calculs.capacite_totale(packs) == 8.00

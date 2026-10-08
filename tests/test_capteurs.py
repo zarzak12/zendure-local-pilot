@@ -644,13 +644,18 @@ def test_script_embarque_identique_a_la_reference():
             f"custom_components/zendure_local_pilot/{const.SCRIPT_EMBARQUE}")
 
 
-def test_version_du_script_egale_celle_du_manifeste():
-    """Le script publie sa version ; l'intégration la compare à la sienne.
-    Une version de script oubliée à la release ne serait jamais proposée."""
-    import json
-    with open(os.path.join(DOSSIER, "manifest.json"), encoding="utf-8") as f:
-        manifeste = json.load(f)["version"]
-    assert coordinator.version_du_script(_script()) == manifeste
+def test_version_du_script_verrouillee():
+    """Le script a sa propre version : une release qui ne le touche pas ne
+    doit pas le faire redéployer. Mais un code modifié sans nouvelle version
+    ne serait jamais proposé à la mise à jour : le verrou l'interdit."""
+    spec = importlib.util.spec_from_file_location(
+        "verrou", os.path.join(RACINE, "tools", "verrouiller_script.py"))
+    verrou = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verrou)
+    actuel = verrou.version_et_empreinte(_script())
+    assert verrou.lire_verrou() == actuel, (
+        "le script a changé : monte SCRIPT_VERSION puis lance tools/verrouiller_script.py")
+    assert coordinator.version_du_script(_script()) == actuel[0]
     assert coordinator.version_du_script("let x = 1;") is None
 
 
