@@ -606,6 +606,21 @@ def test_ecriture_persistante_retablit_smartmode():
     assert veilles == [2], "la batterie a besoin d'un délai avant le rétablissement"
 
 
+def test_kvs_lu_quel_que_soit_le_firmware():
+    """Firmware 2.x : KVS.GetMany renvoie une LISTE. Constaté en réel sur un
+    Pro 3EM en 2.0.1, où l'ancien code faisait échouer l'installation."""
+    shelly = sys.modules["zlp.shelly"]
+    attendu = {"zendure_em": 0, "zendure_ip": "192.168.1.50"}
+    firmware_2 = [{"key": "zendure_em", "etag": "x", "value": 0},
+                  {"key": "zendure_ip", "etag": "y", "value": "192.168.1.50"}]
+    firmware_1 = {"zendure_em": {"etag": "x", "value": 0},
+                  "zendure_ip": {"etag": "y", "value": "192.168.1.50"}}
+    assert shelly.kvs_vers_dict(firmware_2) == attendu
+    assert shelly.kvs_vers_dict(firmware_1) == attendu
+    for vide in (None, [], {}, "n'importe quoi"):
+        assert shelly.kvs_vers_dict(vide) == {}
+
+
 def test_etat_du_script_et_du_shelly():
     d = _donnees(RAPPORT_REEL)
     d.script = {"id": 1, "running": True, "mem_used": 14200, "mem_peak": 15900,

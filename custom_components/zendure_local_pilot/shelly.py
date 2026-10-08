@@ -21,6 +21,22 @@ class ErreurShelly(Exception):
     """Le Shelly est injoignable ou a refusé l'appel."""
 
 
+def kvs_vers_dict(items: Any) -> dict[str, Any]:
+    """Réponse de KVS.GetMany -> {clé: valeur}, quel que soit le firmware.
+
+    Les firmwares 1.x renvoient un dictionnaire {clé: {"value": …}}, les 2.x
+    une liste [{"key": …, "value": …}]. Le script JS gère les deux depuis
+    toujours (kvsToMap) ; l'intégration doit en faire autant.
+    """
+    if isinstance(items, dict):
+        return {cle: (d or {}).get("value") for cle, d in items.items()
+                if isinstance(d, dict)}
+    if isinstance(items, list):
+        return {d["key"]: d.get("value") for d in items
+                if isinstance(d, dict) and "key" in d}
+    return {}
+
+
 class ClientShelly:
     """Appels RPC du Shelly, en HTTP local."""
 
@@ -71,8 +87,7 @@ class ClientShelly:
 
     async def kvs_lire_tout(self) -> dict[str, Any]:
         res = await self.appel("KVS.GetMany", {"match": "zendure_*"})
-        items = (res or {}).get("items", {})
-        return {cle: donnee.get("value") for cle, donnee in items.items()}
+        return kvs_vers_dict((res or {}).get("items"))
 
     async def kvs_ecrire(self, cle: str, valeur: Any) -> None:
         await self.appel("KVS.Set", {"key": cle, "value": valeur})
