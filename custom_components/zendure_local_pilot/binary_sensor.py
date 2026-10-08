@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -23,6 +24,7 @@ from .entity import EntiteShelly, EntiteZendure
 class DescriptionBinaire(BinarySensorEntityDescription):
     valeur: Callable[[Donnees], bool | None]
     shelly: bool = False
+    attributs: Callable[[Donnees], dict[str, Any]] | None = None
 
 
 def _en_veille(d: Donnees) -> bool | None:
@@ -31,13 +33,16 @@ def _en_veille(d: Donnees) -> bool | None:
 
 
 def _defaut(d: Donnees) -> bool | None:
-    proprietes = d.proprietes
-    if "is_error" not in proprietes and "faultLevel" not in proprietes:
-        return None
+    """Erreur signalée par la batterie : is_error seul, comme la version YAML.
+
+    faultLevel n'est PAS un indicateur de défaut : une batterie saine, que
+    l'application Zendure affiche sans aucun problème, renvoie faultLevel 1
+    (constaté sur une SolarFlow 4000 MIX PRO). Sa signification n'est pas
+    documentée ; il est exposé en attribut pour le diagnostic.
+    """
     try:
-        return bool(int(proprietes.get("is_error", 0))) or \
-            int(proprietes.get("faultLevel", 0)) > 0
-    except (TypeError, ValueError):
+        return int(d.proprietes["is_error"]) == 1
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -86,6 +91,8 @@ BINAIRES: tuple[DescriptionBinaire, ...] = (
         name="Erreur",
         device_class=BinarySensorDeviceClass.PROBLEM,
         valeur=_defaut,
+        attributs=lambda d: {"is_error": d.proprietes.get("is_error"),
+                             "fault_level": d.proprietes.get("faultLevel")},
     ),
     DescriptionBinaire(
         key="reseau_connecte",
@@ -127,6 +134,13 @@ class _LectureBinaire:
         if self.coordinator.data is None:
             return None
         return self.entity_description.valeur(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        lire = self.entity_description.attributs
+        if lire is None or self.coordinator.data is None:
+            return None
+        return lire(self.coordinator.data)
 
 
 class BinaireBatterie(EntiteZendure, _LectureBinaire, BinarySensorEntity):

@@ -467,10 +467,20 @@ def test_etats_binaires():
     assert par_cle["batterie_joignable"].valeur(d) is True
     assert par_cle["erreur"].valeur(d) is False
     assert par_cle["reseau_connecte"].valeur(d) is True
-    # faultLevel non nul doit lever l'alerte même si is_error vaut 0
+    # faultLevel 1 avec is_error 0 : batterie saine (constaté en réel, et
+    # l'application Zendure n'affiche aucun problème). Pas d'alerte.
+    sain = dict(RAPPORT_REEL)
+    sain["properties"] = {**RAPPORT_REEL["properties"], "faultLevel": 1, "is_error": 0}
+    assert par_cle["erreur"].valeur(_donnees(sain)) is False
+    assert par_cle["erreur"].attributs(_donnees(sain)) == {"is_error": 0, "fault_level": 1}
+    # is_error 1 : alerte
     alerte = dict(RAPPORT_REEL)
-    alerte["properties"] = {**RAPPORT_REEL["properties"], "faultLevel": 3}
+    alerte["properties"] = {**RAPPORT_REEL["properties"], "is_error": 1}
     assert par_cle["erreur"].valeur(_donnees(alerte)) is True
+    # Champ absent : rien d'affirmé
+    absent = dict(RAPPORT_REEL)
+    absent["properties"] = {k: v for k, v in RAPPORT_REEL["properties"].items() if k != "is_error"}
+    assert par_cle["erreur"].valeur(_donnees(absent)) is None
 
 
 def test_mesure_reseau_suit_la_pince_de_la_regulation():
