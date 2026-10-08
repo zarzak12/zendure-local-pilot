@@ -66,6 +66,7 @@ conservés.
   - [A6 — Installer le tableau de bord](#a6--installer-le-tableau-de-bord)
   - [A7 — Régler la régulation](#a7--régler-la-régulation)
   - [A8 — Mettre à jour](#a8--mettre-à-jour)
+  - [A9 — Recharger en heures creuses](#a9--recharger-en-heures-creuses-facultatif)
   - [Migrer depuis les packages YAML](#migrer-depuis-les-packages-yaml)
   - [Dépannage de l'intégration](#dépannage-de-lintégration)
 - [Option B — Packages YAML](#option-b--packages-yaml)
@@ -609,6 +610,35 @@ modification sera remplacée à la prochaine mise à jour.
 En cas d'échec de la mise à jour du script, une alerte apparaît dans
 *Réparations*, et l'entité **Script de régulation** de *Paramètres → Mises à
 jour* permet de relancer l'installation d'un clic.
+
+### A9 — Recharger en heures creuses (facultatif)
+
+Après plusieurs jours sans soleil, la batterie reste vide. Le blueprint
+**Recharge en heures creuses** la recharge depuis le réseau pendant ta fenêtre
+d'heures creuses, jusqu'à un SOC cible.
+
+[![Importer le blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fzarzak12%2Fzendure-local-pilot%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fzendure_local_pilot%2Frecharge_heures_creuses.yaml)
+
+1. Clique sur le bouton ci-dessus, ou va dans **Paramètres → Automatisations
+   et scènes → Blueprints → Importer un blueprint** et colle l'adresse
+   `https://github.com/zarzak12/zendure-local-pilot/blob/main/blueprints/automation/zendure_local_pilot/recharge_heures_creuses.yaml`.
+2. **Créer une automatisation** à partir du blueprint, puis règle :
+
+   | Réglage | Par défaut | Rôle |
+   |---|---|---|
+   | Début / fin des heures creuses | 22:00 / 06:00 | la fenêtre de recharge (elle peut passer minuit) |
+   | SOC cible | 20 % | recharge jusqu'à ce niveau |
+   | Puissance de charge | 600 W | tirée du réseau, bornée par *Charge maximale* |
+   | Marge de relance | 2 points | après la cible, ne reprend que si le SOC retombe d'autant |
+   | Mode à rétablir | Autoconsommation | le mode remis en place après la recharge |
+
+   Les entités Zendure sont déjà renseignées : leurs identifiants sont les
+   mêmes chez tout le monde.
+
+Pendant la recharge, la régulation passe en mode **Manuel** avec une consigne
+de charge. Elle reprend ton mode habituel dès que la cible est atteinte, ou à
+la fin de la fenêtre, y compris si Home Assistant était arrêté à ce moment-là.
+Un mode Manuel que tu as choisi toi-même n'est jamais remplacé.
 
 ---
 

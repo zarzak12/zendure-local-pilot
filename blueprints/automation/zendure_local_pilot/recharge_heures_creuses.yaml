@@ -1,0 +1,229 @@
+blueprint:
+  name: Zendure Local Pilot – Recharge en heures creuses
+  description: >
+    Pendant une fenêtre horaire (heures creuses), recharge la batterie depuis
+    le réseau jusqu'à un SOC cible, pour éviter qu'elle reste vide après
+    plusieurs jours sans soleil.
+
+
+    Fonctionnement : la régulation du Shelly passe en mode **Manuel** avec une
+    consigne de charge fixe. Dès que le SOC cible est atteint, ou à la fin de
+    la fenêtre, le mode habituel est rétabli (Autoconsommation par défaut).
+
+
+    Le blueprint ne touche au mode que s'il l'a lui-même passé en Manuel : un
+    mode choisi à la main n'est jamais écrasé. La puissance reste bornée par le
+    curseur *Charge maximale*.
+
+
+    Nécessite l'intégration **Zendure Local Pilot**.
+  domain: automation
+  source_url: https://github.com/zarzak12/zendure-local-pilot/blob/main/blueprints/automation/zendure_local_pilot/recharge_heures_creuses.yaml
+  homeassistant:
+    min_version: "2024.11.0"
+
+  input:
+    entites:
+      name: Entités Zendure
+      description: Pré-remplies avec les identifiants de l'intégration, identiques chez tout le monde.
+      collapsed: true
+      input:
+        soc:
+          name: SOC de la batterie
+          default: sensor.zendure_solarflow4000mix_soc
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: sensor
+        mode:
+          name: Mode de régulation
+          default: select.zendure_solarflow4000mix_mode
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: select
+        consigne:
+          name: Consigne manuelle
+          default: number.zendure_solarflow4000mix_consigne_manuelle
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: number
+
+    fenetre:
+      name: Fenêtre et recharge
+      input:
+        debut:
+          name: Début des heures creuses
+          default: "22:00:00"
+          selector:
+            time:
+        fin:
+          name: Fin des heures creuses
+          default: "06:00:00"
+          selector:
+            time:
+        soc_cible:
+          name: SOC cible (%)
+          description: >
+            Si la batterie est en dessous pendant la fenêtre, elle est rechargée
+            jusqu'à l'atteindre.
+          default: 20
+          selector:
+            number:
+              min: 5
+              max: 100
+              step: 1
+              unit_of_measurement: "%"
+        puissance:
+          name: Puissance de charge (W)
+          description: >
+            Puissance tirée du réseau pendant la recharge. Reste bornée par le
+            curseur Charge maximale de l'intégration.
+          default: 600
+          selector:
+            number:
+              min: 100
+              max: 3000
+              step: 50
+              unit_of_measurement: W
+        marge_relance:
+          name: Marge de relance (points de SOC)
+          description: >
+            Une fois la cible atteinte, la recharge ne reprend dans la même
+            fenêtre que si le SOC retombe d'autant de points. Évite les
+            redémarrages en boucle : la batterie se consomme elle-même d'environ
+            1 % par nuit au repos.
+          default: 2
+          selector:
+            number:
+              min: 1
+              max: 10
+              step: 1
+        mode_retour:
+          name: Mode à rétablir ensuite
+          default: autoconso
+          selector:
+            select:
+              options:
+                - label: Autoconsommation
+                  value: autoconso
+                - label: Charge seule
+                  value: charge_seule
+                - label: Décharge seule
+                  value: decharge_seule
+                - label: Arrêt
+                  value: arret
+        notifier:
+          name: Notifications
+          description: Une notification persistante au début et à la fin de chaque recharge.
+          default: true
+          selector:
+            boolean:
+
+mode: queued
+max: 5
+
+triggers:
+  - trigger: time
+    at: !input debut
+    id: debut
+  - trigger: time
+    at: !input fin
+    id: fin
+  - trigger: state
+    entity_id: !input soc
+    id: soc
+  # Home Assistant redémarré en pleine fenêtre : on reprend où on en était.
+  - trigger: homeassistant
+    event: start
+    id: demarrage
+
+variables:
+  entite_soc: !input soc
+  entite_mode: !input mode
+  entite_consigne: !input consigne
+  cible: !input soc_cible
+  puissance: !input puissance
+  marge: !input marge_relance
+  retour: !input mode_retour
+  notifier: !input notifier
+  soc: "{{ states(entite_soc) | float(-1) }}"
+  # « C'est nous » : mode Manuel ET consigne égale à notre charge. Un mode
+  # Manuel réglé à la main, avec une autre consigne, n'est jamais touché.
+  recharge_en_cours: >-
+    {{ is_state(entite_mode, 'manuel')
+       and (states(entite_consigne) | float(0)) == -(puissance | float(0)) }}
+
+actions:
+  - choose:
+      # 1) Cible atteinte, ou hors de la fenêtre : on rétablit le mode
+      #    habituel. « Hors fenêtre » plutôt que « déclencheur de fin » : si
+      #    Home Assistant était arrêté à l'heure de fin, la recharge s'arrête
+      #    quand même au premier déclenchement suivant (redémarrage, SOC).
+      - conditions:
+          - condition: template
+            value_template: "{{ recharge_en_cours }}"
+          - condition: or
+            conditions:
+              - condition: template
+                value_template: "{{ soc >= cible }}"
+              - condition: not
+                conditions:
+                  - condition: time
+                    after: !input debut
+                    before: !input fin
+        sequence:
+          - action: select.select_option
+            target: {entity_id: !input mode}
+            data: {option: "{{ retour }}"}
+          - action: number.set_value
+            target: {entity_id: !input consigne}
+            data: {value: 0}
+          - if: "{{ notifier }}"
+            then:
+              - action: persistent_notification.create
+                data:
+                  notification_id: zendure_recharge_hc
+                  title: Zendure – recharge terminée
+                  message: >-
+                    {{ 'Cible atteinte' if soc >= cible else 'Fin des heures creuses' }} :
+                    SOC {{ soc | round(0) }} % (cible {{ cible }} %). Mode rétabli :
+                    {{ retour }}.
+
+      # 2) Dans la fenêtre, sous la cible : on lance la recharge.
+      #    Au début de la fenêtre, dès qu'on est sous la cible ; ensuite,
+      #    seulement si le SOC est retombé de la marge de relance.
+      - conditions:
+          - condition: time
+            after: !input debut
+            before: !input fin
+          - condition: template
+            value_template: >-
+              {{ not recharge_en_cours and soc >= 0
+                 and (soc < cible if trigger.id in ['debut', 'demarrage']
+                      else soc <= cible - marge) }}
+          # Un mode Manuel choisi à la main n'est pas remplacé.
+          - condition: template
+            value_template: "{{ not is_state(entite_mode, 'manuel') }}"
+        sequence:
+          # Consigne d'abord : en passant en Manuel, la batterie part
+          # directement sur la bonne valeur, sans repasser par l'ancienne.
+          - action: number.set_value
+            target: {entity_id: !input consigne}
+            data: {value: "{{ -(puissance | float(0)) }}"}
+          - action: select.select_option
+            target: {entity_id: !input mode}
+            data: {option: manuel}
+          - if: "{{ notifier }}"
+            then:
+              - action: persistent_notification.create
+                data:
+                  notification_id: zendure_recharge_hc
+                  title: Zendure – recharge en heures creuses
+                  message: >-
+                    Recharge à {{ puissance }} W jusqu'à {{ cible }} %
+                    (SOC actuel : {{ soc | round(0) }} %).

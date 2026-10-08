@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import re
 import os
 import sys
 import types
@@ -282,6 +283,42 @@ def test_liaison_filaire_sans_rssi():
     filaire["properties"] = {**RAPPORT_REEL["properties"], "rssi": 0}
     # Indisponible, pas « Inconnu » (constaté en réel sur une batterie en RJ45)
     assert _valeur("wifi_rssi", _donnees(filaire)) == "INDISPONIBLE"
+
+
+def test_blueprint_recharge_heures_creuses():
+    """Le blueprint vise les entités et les options de mode de l'intégration :
+    un renommage côté intégration le casserait sans bruit."""
+    import yaml
+
+    class Chargeur(yaml.SafeLoader):
+        pass
+    Chargeur.add_constructor("!input", lambda l, n: ("!input", l.construct_scalar(n)))
+    chemin = os.path.join(RACINE, "blueprints", "automation", "zendure_local_pilot",
+                          "recharge_heures_creuses.yaml")
+    with open(chemin, encoding="utf-8") as f:
+        bp = yaml.load(f, Loader=Chargeur)
+
+    def entrees(bloc):
+        for cle, v in bloc.items():
+            if isinstance(v, dict) and "input" in v:
+                yield from entrees(v["input"])
+            else:
+                yield cle, v
+    entrees_bp = dict(entrees(bp["blueprint"]["input"]))
+
+    _module("homeassistant.helpers.entity_registry", RegistryEntry=object, async_get=None)
+    _module("homeassistant.helpers.restore_state", RestoreEntity=type("RestoreEntity", (), {}))
+    for n in ("switch", "update", "button"):
+        _charge(n)
+    existantes = _charge("migration").entites_revendiquees(4)
+    for cle in ("soc", "mode", "consigne"):
+        assert entrees_bp[cle]["default"] in existantes, entrees_bp[cle]["default"]
+    retours = [o["value"] for o in entrees_bp["mode_retour"]["selector"]["select"]["options"]]
+    assert set(retours) <= set(const.MODES), retours
+    # Toute entrée utilisée doit être déclarée, et inversement
+    utilisees = set(re.findall(r"!input', '(\w+)'", repr(bp)))
+    assert utilisees == set(entrees_bp), (utilisees ^ set(entrees_bp))
+    assert "manuel" in const.MODES
 
 
 def test_reprise_remonte_jusqu_a_la_derniere_valeur_valide():
