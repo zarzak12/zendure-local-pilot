@@ -78,8 +78,11 @@ VC_BUFFER_CHARGE: Final = "number:205"
 # script absent d'ici s'afficherait comme inconnu. Vérifié par les tests.
 MODES: Final = ["arret", "autoconso", "charge_seule", "decharge_seule", "manuel"]
 
-# Repli employé tant que la batterie n'a pas annoncé ses propres limites.
-LIMITE_REPLI: Final = 4000
+# Curseurs « décharge max » / « charge max » du Shelly : leur plage s'étend
+# jusqu'à PLAFOND_MAX ; PLAFOND_DEFAUT est la valeur prudente utilisée quand
+# ils sont illisibles (la même que leur valeur par défaut dans le script).
+PLAFOND_MAX: Final = 4000
+PLAFOND_DEFAUT: Final = 800
 
 # ---------------------------------------------------------------------------
 # Modèles

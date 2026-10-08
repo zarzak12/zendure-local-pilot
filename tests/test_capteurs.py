@@ -447,7 +447,7 @@ def test_bornes_des_curseurs_ne_suivent_pas_la_batterie():
     for cle in ("decharge_max", "charge_max"):
         c = _controle(cle)
         assert not hasattr(c, "bornes"), f"{cle} : bornes dynamiques réintroduites"
-        assert (c.native_min_value, c.native_max_value) == (0, 4000)
+        assert (c.native_min_value, c.native_max_value) == (0, const.PLAFOND_MAX)
 
 
 def test_set_power_borne_par_les_curseurs():
@@ -455,10 +455,25 @@ def test_set_power_borne_par_les_curseurs():
     d = _donnees(RAPPORT_REEL)
     d.shelly = {"number:200": {"value": 2500}, "number:201": {"value": 1200}}
     assert services.plafonds_utilisateur(d) == (2500, 1200)
-    # Curseurs illisibles : repli sur 4000, sans jamais lever de limite basse
+    # Une valeur réglée au-dessus du défaut est respectée telle quelle
+    d.shelly = {"number:200": {"value": 3000}, "number:201": {"value": 3000}}
+    assert services.plafonds_utilisateur(d) == (3000, 3000)
+    # Curseurs illisibles : repli PRUDENT, pas le maximum de la plage
     d.shelly = {}
-    assert services.plafonds_utilisateur(d) == (const.LIMITE_REPLI, const.LIMITE_REPLI)
-    assert services.plafonds_utilisateur(None) == (const.LIMITE_REPLI, const.LIMITE_REPLI)
+    assert services.plafonds_utilisateur(d) == (const.PLAFOND_DEFAUT, const.PLAFOND_DEFAUT)
+    assert services.plafonds_utilisateur(None) == (const.PLAFOND_DEFAUT, const.PLAFOND_DEFAUT)
+
+
+def test_plafond_par_defaut_identique_dans_le_script():
+    """Script et intégration se replient sur la même valeur prudente, et le
+    script ne retombe jamais sur le maximum de la plage."""
+    script = _script()
+    m = re.search(r"let PLAFOND_DEFAUT = (\d+);", script)
+    assert m and int(m.group(1)) == const.PLAFOND_DEFAUT == 800
+    for nom in ("Zendure décharge max", "Zendure charge max"):
+        bloc = re.search(r'name: "' + nom + r'".*?default_value: (\w+)', script, re.S)
+        assert bloc and bloc.group(1) == "PLAFOND_DEFAUT", nom
+    assert "val(VC[1].key, PLAFOND_DEFAUT)" in script and "val(VC[2].key, PLAFOND_DEFAUT)" in script
 
 
 def test_curseurs_alignes_sur_le_script():

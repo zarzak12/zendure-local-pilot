@@ -45,7 +45,7 @@
 // Version du script, publiée dans le KVS (zendure_version) à chaque
 // démarrage : l'intégration Home Assistant la compare à celle qu'elle
 // embarque pour proposer, ou faire, la mise à jour. Même numéro que la release.
-let SCRIPT_VERSION = "1.3.0";
+let SCRIPT_VERSION = "1.3.1";
 let DEFAULTS = { zendure_ip: "", zendure_sn: "", zendure_em: 0, zendure_tick: 250, zendure_period: 1000,
     zendure_gain: 0.9, zendure_dead: 30, zendure_hyst: 25, zendure_wake: 80, zendure_flip: 8,
     zendure_flipw: 100, zendure_smooth: 0 };
@@ -119,15 +119,20 @@ function readLimits(p) {
 // Elle est réajustée au démarrage si le Shelly attribue un autre id.
 // Index : 0 mode, 1 décharge max, 2 charge max, 3 consigne, 4 buffer décharge,
 //         5 délai veille, 6 en veille, 7 buffer charge.
+// Décharge max / charge max : 800 W par défaut, une valeur prudente que
+// chacun relève selon sa batterie et son installation électrique. Ce défaut
+// ne vaut qu'à la CRÉATION du composant : une valeur déjà réglée est
+// persistée et n'est jamais remplacée (SetConfig ne touche pas à la valeur).
+let PLAFOND_DEFAUT = 800;
 let VC = [
     { type: "enum", key: "enum:200", config: { id: 200, name: "Zendure mode", persisted: true, default_value: "arret",
             options: ["arret", "autoconso", "charge_seule", "decharge_seule", "manuel"],
             meta: { ui: { view: "dropdown", titles: { arret: "Arrêt", autoconso: "Autoconsommation",
                         charge_seule: "Charge seule", decharge_seule: "Décharge seule", manuel: "Manuel" } } } } },
     { type: "number", key: "number:200", config: { id: 200, name: "Zendure décharge max", persisted: true, min: 0, max: 4000,
-            default_value: 4000, meta: { ui: { view: "slider", unit: "W", step: 50 } } } },
+            default_value: PLAFOND_DEFAUT, meta: { ui: { view: "slider", unit: "W", step: 50 } } } },
     { type: "number", key: "number:201", config: { id: 201, name: "Zendure charge max", persisted: true, min: 0, max: 4000,
-            default_value: 4000, meta: { ui: { view: "slider", unit: "W", step: 50 } } } },
+            default_value: PLAFOND_DEFAUT, meta: { ui: { view: "slider", unit: "W", step: 50 } } } },
     { type: "number", key: "number:202", config: { id: 202, name: "Zendure consigne manuelle", persisted: true, min: -4000, max: 4000,
             default_value: 0, meta: { ui: { view: "field", unit: "W", step: 10 } } } },
     { type: "number", key: "number:203", config: { id: 203, name: "Zendure buffer", persisted: true, min: -200, max: 200,
@@ -604,7 +609,9 @@ function decide(g, mode, z) {
     let regulated = (mode === "autoconso" || mode === "charge_seule" || mode === "decharge_seule");
     if (!regulated || CFG.smooth <= 0) tSmooth = null;
     let cur = z.cur;
-    let dMax = val(VC[1].key, 4000), cMax = val(VC[2].key, 4000);
+    // Curseur momentanément illisible : repli sur la valeur prudente, jamais
+    // sur le maximum de la plage.
+    let dMax = val(VC[1].key, PLAFOND_DEFAUT), cMax = val(VC[2].key, PLAFOND_DEFAUT);
     let t;
 
     if (mode === "arret") t = 0;

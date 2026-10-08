@@ -15,7 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .calculs import echelle_soc
-from .const import DOMAIN, LIMITE_REPLI, VC_CHARGE_MAX, VC_DECHARGE_MAX
+from .const import DOMAIN, PLAFOND_DEFAUT, PLAFOND_MAX, VC_CHARGE_MAX, VC_DECHARGE_MAX
 from .coordinator import CoordinateurZendure, Donnees
 from .shelly import ErreurShelly
 
@@ -61,13 +61,17 @@ SCHEMA_REDEPLOYER = vol.Schema({
 
 
 def plafonds_utilisateur(donnees: Donnees | None) -> tuple[int, int]:
-    """Plafonds de décharge et de charge réglés sur le Shelly, en W."""
+    """Plafonds de décharge et de charge réglés sur le Shelly, en W.
+
+    Curseur illisible : repli sur la valeur PRUDENTE (800 W), jamais sur le
+    maximum de la plage, comme le fait le script.
+    """
     def lire(composant: str) -> int:
         try:
-            v = int(float(donnees.vc(composant))) if donnees else LIMITE_REPLI
+            v = int(float(donnees.vc(composant))) if donnees else PLAFOND_DEFAUT
         except (TypeError, ValueError):
-            return LIMITE_REPLI
-        return max(0, min(v, LIMITE_REPLI))
+            return PLAFOND_DEFAUT
+        return max(0, min(v, PLAFOND_MAX))
     return lire(VC_DECHARGE_MAX), lire(VC_CHARGE_MAX)
 
 

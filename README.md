@@ -107,9 +107,17 @@ d'API : mêmes points d'entrée, mêmes noms de propriétés.
 | SolarFlow 800 / Plus / Pro | `solarFlow800…` | 800–1200 W | 800–1000 W | |
 
 Les puissances ci-dessus sont **indicatives** : le script ne s'en sert pas. La
-régulation est bornée par les curseurs *Décharge max* et *Charge max* (4000 W par
-défaut), et la batterie bride d'elle-même ce que son matériel ne peut pas fournir.
-Règle ces curseurs à la puissance de ton modèle si tu veux une borne exacte.
+régulation est bornée par les curseurs *Décharge max* et *Charge max*, et la
+batterie bride d'elle-même ce que son matériel ne peut pas fournir.
+
+> 💡 **Ces deux curseurs valent 800 W à l'installation**, une valeur prudente
+> qui convient à toutes les batteries et à toutes les installations
+> électriques. **Relève-les ensuite** à la puissance de ton modèle (tableau
+> ci-dessus) et de ta ligne d'alimentation : sinon, une 4000 MIX PRO plafonne
+> à 800 W au lieu de 3000. Ils vont jusqu'à 4000 W.
+>
+> Ce défaut ne s'applique qu'à une **nouvelle installation** : une mise à jour
+> du script ne modifie jamais une valeur déjà réglée.
 
 > ⚠️ Le script ne s'appuie **pas** sur `inverseMaxPower` et `chargeMaxLimit`. Sur
 > certains modèles ou firmwares, ces champs suivent les consignes que le script
@@ -545,6 +553,7 @@ et contrôle :
 | Diagnostic | **Script CPU** | au-dessus de 0 % dans un mode régulé |
 | Capteurs | **Liaison batterie** | *Connecté* |
 | Contrôles | **Mode** | ton mode habituel (*Autoconsommation* pour un usage normal) |
+| Contrôles | **Décharge maximale**, **Charge maximale** | 800 W sur une nouvelle installation : **relève-les** à la puissance de ta batterie (voir [A7](#a7--régler-la-régulation)) |
 | Capteurs | **Réseau** | la même valeur que la pince du Shelly, au signe près (+ soutirage, − injection) |
 
 Puis vérifie la **pince** : **Configuration → Pince réseau lue**. Elle vaut 0
@@ -585,7 +594,7 @@ Tout se règle depuis l'appareil ou l'onglet **Réglages** du tableau de bord :
 | Réglage | Entité | Pour |
 |---|---|---|
 | Mode | `select.…_mode` | Autoconsommation, Charge seule, Décharge seule, Manuel, Arrêt |
-| Plafonds | `number.…_decharge_max`, `…_charge_max` | limiter la puissance (± 3000 W par exemple) |
+| Plafonds | `number.…_decharge_max`, `…_charge_max` | **800 W à l'installation : relève-les** à la puissance de ta batterie (3000 W pour une 4000 MIX PRO, par exemple) |
 | Marges | `number.…_buffer`, `…_buffer_charge` | viser un léger soutirage (+) ou une légère injection (−) |
 | Veille | `number.…_delai_veille` | minutes à 0 W avant la veille profonde (0 = jamais) |
 | Bornes SOC | `number.…_soc_min_consigne`, `…_soc_max_consigne` | écrites dans la batterie (mémoire flash) |
@@ -1071,8 +1080,8 @@ Puis redéploie. Tes réglages, eux, n'ont pas bougé.
 | Entité | Défaut | Description |
 |---|---|---|
 | Mode | Arrêt | voir ci-dessus |
-| Décharge max | 4000 W | plafond de la consigne de décharge |
-| Charge max | 4000 W | plafond de la consigne de charge |
+| Décharge max | 800 W | plafond de la consigne de décharge, réglable jusqu'à 4000 W. **À relever selon ta batterie** |
+| Charge max | 800 W | plafond de la consigne de charge, réglable jusqu'à 4000 W. **À relever selon ta batterie** |
 | Consigne manuelle | 0 W | utilisée uniquement en mode Manuel |
 | Buffer décharge | 20 W | cible sur la pince quand la batterie décharge, −200 à 200 W (− = injection tolérée) |
 | Buffer charge | 20 W | idem quand la batterie charge le surplus |
