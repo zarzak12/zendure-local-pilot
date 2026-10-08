@@ -1,0 +1,378 @@
+blueprint:
+  name: Zendure Local Pilot – Charge de nuit selon Tempo et prévision solaire
+  description: >
+    Recharge la batterie depuis le réseau pendant la nuit (heures creuses), en
+    adaptant le SOC visé à la prévision solaire du lendemain et en tenant
+    compte de la couleur Tempo, sans jamais dépasser la puissance de ton
+    abonnement.
+
+
+    - **Couleur Tempo** : la charge n'a lieu que les nuits qui précèdent une
+    couleur autorisée (Blanc et Rouge par défaut, pour préparer les journées
+    chères).
+
+    - **Prévision solaire** : plus le lendemain s'annonce ensoleillé, moins on
+    charge depuis le réseau (le soleil fera le reste).
+
+    - **Puissance de l'abonnement** : la charge est réduite, voire suspendue,
+    si la maison consomme déjà beaucoup.
+
+
+    La décision est reprise **chaque minute**, sans mémoire : un redémarrage de
+    Home Assistant en pleine nuit ne laisse jamais la batterie bloquée en
+    charge. Les capteurs « demain » sont lus avant minuit, les capteurs
+    « aujourd'hui » après : la fenêtre doit commencer le soir et finir le
+    matin.
+
+
+    La régulation passe en mode **Manuel** pendant la charge, puis ton mode
+    habituel est rétabli. Un mode que tu as choisi toi-même n'est pas modifié.
+
+
+    Nécessite l'intégration **Zendure Local Pilot**.
+  domain: automation
+  source_url: https://github.com/zarzak12/zendure-local-pilot/blob/main/blueprints/automation/zendure_local_pilot/charge_tempo_solaire.yaml
+  homeassistant:
+    min_version: "2024.11.0"
+
+  input:
+    entites:
+      name: Entités Zendure
+      description: Pré-remplies avec les identifiants de l'intégration, identiques chez tout le monde.
+      collapsed: true
+      input:
+        soc:
+          name: SOC de la batterie
+          default: sensor.zendure_solarflow4000mix_soc
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: sensor
+        mode:
+          name: Mode de régulation
+          default: select.zendure_solarflow4000mix_mode
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: select
+        consigne:
+          name: Consigne manuelle
+          default: number.zendure_solarflow4000mix_consigne_manuelle
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: number
+        reseau:
+          name: Puissance réseau
+          description: Au point de livraison, + = soutirage, − = injection.
+          default: sensor.zendure_solarflow4000mix_reseau
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: sensor
+        entree_reseau:
+          name: Charge en cours de la batterie
+          description: >
+            Puissance que la batterie tire du réseau. Retirée de la puissance
+            réseau pour obtenir la consommation de la maison seule.
+          default: sensor.zendure_solarflow4000mix_entree_reseau
+          selector:
+            entity:
+              filter:
+                - integration: zendure_local_pilot
+                  domain: sensor
+
+    tempo:
+      name: Tempo
+      input:
+        tempo_aujourdhui:
+          name: Couleur Tempo d'aujourd'hui
+          description: Lue après minuit (la nuit appartient alors à la journée qui commence).
+          selector:
+            entity:
+              domain: sensor
+        tempo_demain:
+          name: Couleur Tempo de demain
+          description: Lue avant minuit.
+          selector:
+            entity:
+              domain: sensor
+        charge_bleu:
+          name: Charger avant un jour Bleu
+          default: false
+          selector:
+            boolean:
+        charge_blanc:
+          name: Charger avant un jour Blanc
+          default: true
+          selector:
+            boolean:
+        charge_rouge:
+          name: Charger avant un jour Rouge
+          default: true
+          selector:
+            boolean:
+        charge_inconnu:
+          name: Charger si la couleur est inconnue
+          description: Capteur indisponible, couleur pas encore publiée…
+          default: false
+          selector:
+            boolean:
+
+    soleil:
+      name: Prévision solaire
+      input:
+        prevision_aujourdhui:
+          name: Production prévue aujourd'hui (kWh)
+          description: Lue après minuit.
+          selector:
+            entity:
+              domain: sensor
+        prevision_demain:
+          name: Production prévue demain (kWh)
+          description: Lue avant minuit.
+          selector:
+            entity:
+              domain: sensor
+        seuil_moyen:
+          name: Seuil « soleil moyen » (kWh)
+          default: 3.5
+          selector:
+            number:
+              min: 0
+              max: 50
+              step: 0.1
+              unit_of_measurement: kWh
+        seuil_fort:
+          name: Seuil « fort soleil » (kWh)
+          default: 7
+          selector:
+            number:
+              min: 0
+              max: 50
+              step: 0.1
+              unit_of_measurement: kWh
+        soc_faible:
+          name: SOC visé si faible soleil (%)
+          description: Aussi utilisé si la prévision est indisponible.
+          default: 95
+          selector:
+            number: {min: 0, max: 100, step: 1, unit_of_measurement: "%"}
+        soc_moyen:
+          name: SOC visé si soleil moyen (%)
+          default: 50
+          selector:
+            number: {min: 0, max: 100, step: 1, unit_of_measurement: "%"}
+        soc_fort:
+          name: SOC visé si fort soleil (%)
+          default: 30
+          selector:
+            number: {min: 0, max: 100, step: 1, unit_of_measurement: "%"}
+
+    charge:
+      name: Fenêtre et puissance
+      input:
+        debut:
+          name: Début de la fenêtre
+          default: "22:00:00"
+          selector:
+            time:
+        fin:
+          name: Fin de la fenêtre
+          default: "06:00:00"
+          selector:
+            time:
+        puissance:
+          name: Puissance de charge maximale (W)
+          description: Reste bornée par le curseur Charge maximale de l'intégration.
+          default: 1200
+          selector:
+            number: {min: 100, max: 3000, step: 50, unit_of_measurement: W}
+        abonnement_kva:
+          name: Puissance de l'abonnement (kVA)
+          default: 9
+          selector:
+            number: {min: 3, max: 36, step: 1, unit_of_measurement: kVA}
+        marge_securite:
+          name: Marge de sécurité sous l'abonnement (W)
+          description: >
+            La charge est réduite pour que maison + batterie restent sous
+            l'abonnement moins cette marge (pics brefs, cos φ).
+          default: 500
+          selector:
+            number: {min: 0, max: 3000, step: 100, unit_of_measurement: W}
+        marge_relance:
+          name: Marge de relance (points de SOC)
+          description: >
+            Une fois le SOC visé atteint, la charge ne reprend que si le SOC
+            retombe d'autant de points. Évite les redémarrages en boucle.
+          default: 2
+          selector:
+            number: {min: 1, max: 10, step: 1}
+        mode_retour:
+          name: Mode habituel (rétabli après la charge)
+          default: autoconso
+          selector:
+            select:
+              options:
+                - label: Autoconsommation
+                  value: autoconso
+                - label: Charge seule
+                  value: charge_seule
+                - label: Décharge seule
+                  value: decharge_seule
+                - label: Arrêt
+                  value: arret
+        notifier:
+          name: Notifications
+          description: Une notification au début et à la fin de chaque charge.
+          default: true
+          selector:
+            boolean:
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: time
+    at: !input debut
+  - trigger: time
+    at: !input fin
+  # Décision reprise chaque minute : suit la consommation de la maison, et
+  # rattrape tout seul un redémarrage de Home Assistant.
+  - trigger: time_pattern
+    minutes: /1
+
+variables:
+  e_soc: !input soc
+  e_mode: !input mode
+  e_consigne: !input consigne
+  e_reseau: !input reseau
+  e_entree: !input entree_reseau
+  e_tempo_auj: !input tempo_aujourdhui
+  e_tempo_dem: !input tempo_demain
+  e_prev_auj: !input prevision_aujourdhui
+  e_prev_dem: !input prevision_demain
+  ok_bleu: !input charge_bleu
+  ok_blanc: !input charge_blanc
+  ok_rouge: !input charge_rouge
+  ok_inconnu: !input charge_inconnu
+  seuil_moyen: !input seuil_moyen
+  seuil_fort: !input seuil_fort
+  soc_faible: !input soc_faible
+  soc_moyen: !input soc_moyen
+  soc_fort: !input soc_fort
+  p_max: !input puissance
+  kva: !input abonnement_kva
+  marge_secu: !input marge_securite
+  marge: !input marge_relance
+  retour: !input mode_retour
+  notifier: !input notifier
+
+  # Avant minuit, la journée à préparer est « demain » ; après, c'est
+  # « aujourd'hui ».
+  avant_minuit: "{{ now().hour >= 12 }}"
+  couleur: >-
+    {%- set t = states(e_tempo_dem if avant_minuit else e_tempo_auj) | lower -%}
+    {%- if 'bleu' in t or 'blue' in t -%}bleu
+    {%- elif 'blanc' in t or 'white' in t -%}blanc
+    {%- elif 'rouge' in t or 'red' in t -%}rouge
+    {%- else -%}inconnu{%- endif -%}
+  autorise: >-
+    {{ {'bleu': ok_bleu, 'blanc': ok_blanc, 'rouge': ok_rouge}.get(couleur, ok_inconnu) }}
+  soleil: "{{ states(e_prev_dem if avant_minuit else e_prev_auj) | float(-1) }}"
+  soc_vise: >-
+    {%- if soleil >= seuil_fort -%}{{ soc_fort }}
+    {%- elif soleil >= seuil_moyen -%}{{ soc_moyen }}
+    {%- else -%}{{ soc_faible }}{%- endif -%}
+  soc: "{{ states(e_soc) | float(-1) }}"
+
+  # Consommation de la maison SANS la batterie : la puissance réseau inclut la
+  # charge en cours, qu'il faut retirer. Sinon, plus la batterie charge, plus
+  # la maison semble consommer, et la consigne oscille d'elle-même.
+  maison: "{{ states(e_reseau) | float(0) - states(e_entree) | float(0) }}"
+  disponible: "{{ kva * 1000 - marge_secu - maison }}"
+  puissance_charge: >-
+    {{ ((([[p_max, disponible] | min, 0] | max) / 50) | round(0, 'floor') * 50) | int }}
+
+  mode_actuel: "{{ states(e_mode) }}"
+  consigne_actuelle: "{{ states(e_consigne) | float(0) }}"
+  # « C'est nous » : Manuel avec une consigne de charge ou nulle. Un mode
+  # Manuel en décharge (consigne positive) réglé à la main n'est pas touché.
+  nous: "{{ mode_actuel == 'manuel' and consigne_actuelle <= 0 }}"
+  # On ne prend la main que depuis le mode habituel.
+  libre: "{{ mode_actuel == retour or nous }}"
+
+actions:
+  - choose:
+      # 1) Hors fenêtre, jour non autorisé, ou SOC visé atteint : si la charge
+      #    est de notre fait, on rétablit le mode habituel.
+      - conditions:
+          - condition: template
+            value_template: "{{ nous }}"
+          - condition: or
+            conditions:
+              - condition: not
+                conditions:
+                  - condition: time
+                    after: !input debut
+                    before: !input fin
+              - condition: template
+                value_template: "{{ not autorise or soc >= soc_vise }}"
+        sequence:
+          - action: select.select_option
+            target: {entity_id: !input mode}
+            data: {option: "{{ retour }}"}
+          - action: number.set_value
+            target: {entity_id: !input consigne}
+            data: {value: 0}
+          - if: "{{ notifier }}"
+            then:
+              - action: persistent_notification.create
+                data:
+                  notification_id: zendure_charge_tempo
+                  title: Zendure – charge de nuit terminée
+                  message: >-
+                    SOC {{ soc | round(0) }} % (visé {{ soc_vise }} %, Tempo
+                    {{ couleur }}, prévision {{ soleil }} kWh). Mode rétabli :
+                    {{ retour }}.
+
+      # 2) Dans la fenêtre, jour autorisé, sous le SOC visé : on charge.
+      #    Depuis le mode habituel, seulement si le SOC est sous le visé
+      #    moins la marge de relance ; une charge déjà lancée continue
+      #    jusqu'au SOC visé.
+      - conditions:
+          - condition: time
+            after: !input debut
+            before: !input fin
+          - condition: template
+            value_template: >-
+              {{ libre and autorise and soc >= 0
+                 and (soc < soc_vise if nous else soc <= soc_vise - marge) }}
+        sequence:
+          # N'écrire que si la consigne change vraiment (pas de 50 W) : pas
+          # d'écriture inutile chaque minute.
+          - if: "{{ (consigne_actuelle + puissance_charge) | abs >= 50 or not nous }}"
+            then:
+              - action: number.set_value
+                target: {entity_id: !input consigne}
+                data: {value: "{{ -puissance_charge }}"}
+          - if: "{{ not nous }}"
+            then:
+              - action: select.select_option
+                target: {entity_id: !input mode}
+                data: {option: manuel}
+              - if: "{{ notifier }}"
+                then:
+                  - action: persistent_notification.create
+                    data:
+                      notification_id: zendure_charge_tempo
+                      title: Zendure – charge de nuit
+                      message: >-
+                        Tempo {{ couleur }}, prévision {{ soleil }} kWh :
+                        charge jusqu'à {{ soc_vise }} % (SOC actuel
+                        {{ soc | round(0) }} %), {{ puissance_charge }} W.

@@ -285,18 +285,15 @@ def test_liaison_filaire_sans_rssi():
     assert _valeur("wifi_rssi", _donnees(filaire)) == "INDISPONIBLE"
 
 
-def test_blueprint_recharge_heures_creuses():
-    """Le blueprint vise les entités et les options de mode de l'intégration :
-    un renommage côté intégration le casserait sans bruit."""
+def test_blueprints_coherents_avec_l_integration():
+    """Les blueprints visent les entités et les options de mode de
+    l'intégration : un renommage côté intégration les casserait sans bruit."""
+    import glob
     import yaml
 
     class Chargeur(yaml.SafeLoader):
         pass
     Chargeur.add_constructor("!input", lambda l, n: ("!input", l.construct_scalar(n)))
-    chemin = os.path.join(RACINE, "blueprints", "automation", "zendure_local_pilot",
-                          "recharge_heures_creuses.yaml")
-    with open(chemin, encoding="utf-8") as f:
-        bp = yaml.load(f, Loader=Chargeur)
 
     def entrees(bloc):
         for cle, v in bloc.items():
@@ -304,21 +301,33 @@ def test_blueprint_recharge_heures_creuses():
                 yield from entrees(v["input"])
             else:
                 yield cle, v
-    entrees_bp = dict(entrees(bp["blueprint"]["input"]))
 
     _module("homeassistant.helpers.entity_registry", RegistryEntry=object, async_get=None)
     _module("homeassistant.helpers.restore_state", RestoreEntity=type("RestoreEntity", (), {}))
     for n in ("switch", "update", "button"):
         _charge(n)
     existantes = _charge("migration").entites_revendiquees(4)
-    for cle in ("soc", "mode", "consigne"):
-        assert entrees_bp[cle]["default"] in existantes, entrees_bp[cle]["default"]
-    retours = [o["value"] for o in entrees_bp["mode_retour"]["selector"]["select"]["options"]]
-    assert set(retours) <= set(const.MODES), retours
-    # Toute entrée utilisée doit être déclarée, et inversement
-    utilisees = set(re.findall(r"!input', '(\w+)'", repr(bp)))
-    assert utilisees == set(entrees_bp), (utilisees ^ set(entrees_bp))
     assert "manuel" in const.MODES
+
+    chemins = glob.glob(os.path.join(RACINE, "blueprints", "automation", "**", "*.yaml"),
+                        recursive=True)
+    assert len(chemins) >= 2
+    for chemin in chemins:
+        nom = os.path.basename(chemin)
+        with open(chemin, encoding="utf-8") as f:
+            bp = yaml.load(f, Loader=Chargeur)
+        entrees_bp = dict(entrees(bp["blueprint"]["input"]))
+        # Entités pré-remplies : toutes doivent exister dans l'intégration
+        for cle, v in entrees_bp.items():
+            defaut = v.get("default")
+            if isinstance(defaut, str) and defaut.split(".")[0] in (
+                    "sensor", "select", "number", "switch", "binary_sensor"):
+                assert defaut in existantes, f"{nom} : {defaut} n'existe pas"
+        retours = [o["value"] for o in entrees_bp["mode_retour"]["selector"]["select"]["options"]]
+        assert set(retours) <= set(const.MODES), f"{nom} : {retours}"
+        # Toute entrée utilisée doit être déclarée, et inversement
+        utilisees = set(re.findall(r"!input', '(\w+)'", repr(bp)))
+        assert utilisees == set(entrees_bp), f"{nom} : {utilisees ^ set(entrees_bp)}"
 
 
 def test_reprise_remonte_jusqu_a_la_derniere_valeur_valide():

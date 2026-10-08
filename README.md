@@ -640,6 +640,31 @@ de charge. Elle reprend ton mode habituel dès que la cible est atteinte, ou à
 la fin de la fenêtre, y compris si Home Assistant était arrêté à ce moment-là.
 Un mode Manuel que tu as choisi toi-même n'est jamais remplacé.
 
+#### Variante : selon Tempo et la prévision solaire
+
+Pour les abonnés **Tempo** : le blueprint **Charge de nuit selon Tempo et
+prévision solaire** ne charge que les nuits qui précèdent une couleur choisie
+(Blanc et Rouge par défaut), vise un SOC d'autant plus bas que le lendemain
+s'annonce ensoleillé, et réduit la charge pour que la maison et la batterie
+restent sous la puissance de ton abonnement.
+
+[![Importer le blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fzarzak12%2Fzendure-local-pilot%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fzendure_local_pilot%2Fcharge_tempo_solaire.yaml)
+
+Il te faut :
+- un capteur de **couleur Tempo** pour aujourd'hui et un pour demain (par
+  exemple l'intégration *RTE Tempo*). Les valeurs « Bleu / Blanc / Rouge » et
+  « blue / white / red » sont reconnues ;
+- un capteur de **production solaire prévue** pour aujourd'hui et un pour
+  demain, en kWh (par exemple *Forecast.Solar* ou *Solcast*).
+
+Les capteurs « demain » sont lus avant minuit, ceux « aujourd'hui » après :
+c'est toujours la journée à préparer qui décide. La décision est reprise
+chaque minute, sans mémoire : un redémarrage de Home Assistant en pleine nuit
+ne laisse jamais la batterie bloquée en charge.
+
+N'active pas les deux blueprints en même temps : ils se disputeraient le mode
+Manuel.
+
 ---
 
 ### Migrer depuis les packages YAML
