@@ -1,9 +1,13 @@
 # Intégration HACS — Zendure Local Pilot
 
-> **État : bêta.** Cette intégration remplace les packages YAML par une
-> installation en deux clics. Elle n'a pas encore été éprouvée sur une
-> installation en production : si tu tiens à la stabilité, reste sur les
-> packages YAML, qui restent pleinement pris en charge.
+> **État : bêta.** En service sur une SolarFlow 4000 MIX PRO avec un Shelly
+> Pro 3EM en firmware 2.0.1. Les packages YAML restent pleinement pris en
+> charge.
+>
+> **Pour installer, mettre à jour ou migrer, suis le guide pas à pas du
+> README : [Option A — Intégration HACS](../README.md#option-a--intégration-hacs-recommandée).**
+> Ce document en est la référence : ce que l'intégration expose, comment elle
+> se comporte, et pourquoi.
 
 ## Pourquoi une intégration ?
 
@@ -26,59 +30,31 @@ désinstalles l'intégration, l'autoconsommation continue.
 
 ## Installation
 
-### Nouvelle installation : l'ordre complet
+Le guide pas à pas est dans le README :
+[Option A — Intégration HACS](../README.md#option-a--intégration-hacs-recommandée)
+(prérequis, HACS, formulaire, vérifications, tableau de bord, réglages, mises
+à jour), avec la [migration depuis les packages YAML](../README.md#migrer-depuis-les-packages-yaml)
+et le [dépannage](../README.md#dépannage-de-lintégration).
 
-1. **Côté matériel**, étapes 1 à 3 du [README](../README.md#installation-pas-à-pas) :
-   activer l'API locale de la Zendure, préparer le Shelly Pro 3EM, y
-   déployer le script de régulation. Elles sont indispensables :
-   l'intégration supervise le script, elle ne le remplace pas.
-2. **Ignore les étapes 4 à 7 du README**, propres à la version YAML.
-   L'intégration Shelly officielle n'est **pas** nécessaire à la régulation :
-   l'intégration parle directement au Shelly.
+**Sans HACS** : copie `custom_components/zendure_local_pilot/` dans le dossier
+`custom_components/` de ta configuration, redémarre, puis reprends le guide à
+l'étape A4.
 
-> 💡 **Tu as déjà l'intégration Shelly officielle ? Garde-la.** Tes compteurs
-> d'énergie basés sur la pince (`…_em0_total_active_energy`, compteurs Tempo,
-> cumuls mensuels…) en dépendent. Les deux cohabitent : certains réglages
-> apparaissent simplement en double (`select.shellypro3em_…_zendure_mode` et
-> `select.zendure_solarflow4000mix_mode` pilotent le même composant du Shelly).
-3. Installe l'intégration (ci-dessous), puis le [tableau de bord](#tableau-de-bord).
+**L'intégration Shelly officielle** n'est pas nécessaire à la régulation :
+l'intégration parle directement au Shelly. Si tu l'as déjà, garde-la : tes
+compteurs d'énergie basés sur la pince (`…_em0_total_active_energy`, Tempo,
+cumuls…) en dépendent. Les deux cohabitent ; certains réglages apparaissent
+simplement en double (`select.shellypro3em_…_zendure_mode` et
+`select.zendure_solarflow4000mix_mode` pilotent le même composant du Shelly).
 
-### Par HACS (recommandé)
+### Tableau de bord généré
 
-1. HACS → menu ⋮ → **Dépôts personnalisés**.
-2. URL : `https://github.com/zarzak12/zendure-local-pilot`, catégorie
-   **Intégration**.
-3. Cherche **Zendure Local Pilot**, puis **Télécharger**.
-4. Redémarre Home Assistant.
-5. **Paramètres → Appareils et services → Ajouter une intégration** →
-   *Zendure Local Pilot*.
-
-### À la main
-
-Copie `custom_components/zendure_local_pilot/` dans le dossier
-`custom_components/` de ta configuration, puis redémarre.
-
-### Prérequis
-
-Home Assistant **2024.11 ou plus récent**.
-
-Le script de régulation doit **déjà tourner sur le Shelly**. L'intégration le
-vérifie et refuse la configuration s'il est absent : sans lui, il n'y aurait
-rien à superviser et aucune batterie à découvrir. Voir le [README](../README.md)
-pour le déploiement du script.
-
-### Tableau de bord
-
-1. Installe **`apexcharts-card`** par HACS (onglet Frontend), puis vide le
-   cache du navigateur (Ctrl+F5).
-2. Tableau de bord → ✏️ **Modifier** → ⋮ → **Modifier en YAML**.
-3. Colle le contenu de
-   [**`dashboard/dashboard_integration.yaml`**](https://github.com/zarzak12/zendure-local-pilot/blob/integration-hacs/dashboard/dashboard_integration.yaml),
-   sans rien modifier. HACS ne télécharge que l'intégration : prends ce
-   fichier sur GitHub (bouton *Copy raw file*).
-
-Pour **ajouter** ces vues à un tableau de bord existant plutôt que le
-remplacer, ne colle que le contenu de la clé `views:` à la suite des tiennes.
+[`dashboard/dashboard_integration.yaml`](../dashboard/dashboard_integration.yaml)
+est **généré** à partir du tableau de bord de la version YAML par
+`tools/generer_dashboard_integration.py` : les deux restent identiques, aux
+identifiants près, plus un bloc *Script du Shelly* propre à l'intégration. Ne
+le modifie pas à la main : modifie la source puis relance le générateur. Les
+tests vérifient qu'il est à jour et qu'il ne cite que des entités existantes.
 
 ## Mise à jour du script du Shelly
 
@@ -159,12 +135,6 @@ des entités de la version YAML qui changent de domaine (`input_number.…`,
 Les options du mode sont les mêmes que dans le script : `arret`,
 `autoconso`, `charge_seule`, `decharge_seule`, `manuel`.
 
-Ce fichier est **généré** à partir du tableau de bord de la version YAML par
-`tools/generer_dashboard_integration.py` : les deux restent identiques, aux
-identifiants près. Ne le modifie pas à la main, modifie la source puis relance
-le générateur (les tests vérifient qu'il est à jour et qu'il ne cite que des
-entités existantes).
-
 ## Formulaire de configuration
 
 | Champ | Rôle |
@@ -189,12 +159,9 @@ dans ces conditions, Home Assistant lui attribue
 `sensor.zendure_solarflow4000mix_soc_2`, et ton historique reste accroché à
 l'ancienne entité, qui ne se met plus à jour.
 
-**La bonne marche à suivre :**
-
-1. **Retire d'abord les packages**, c'est-à-dire les fichiers
-   `packages/zendure_solarflow4000mix*.yaml` de ta configuration.
-2. Redémarre Home Assistant.
-3. Ajoute l'intégration, **case de migration cochée**.
+D'où l'ordre du [guide de migration](../README.md#migrer-depuis-les-packages-yaml) :
+retirer **tous** les packages, redémarrer, **puis** ajouter l'intégration,
+case de migration cochée.
 
 L'intégration libère alors les anciennes entrées de registre **des seules
 entités qu'elle reprend**, une seule fois, puis reprend les mêmes
@@ -204,8 +171,8 @@ bord continuent comme si de rien n'était.
 
 Si l'ordre n'a pas été respecté, une alerte de réparation apparaît dans
 **Paramètres → Système → Réparations** et indique combien d'entités ont dû se
-rabattre sur un suffixe `_2`. Corrige alors l'étape 1, puis recharge
-l'intégration.
+rabattre sur un suffixe `_2`. Retire alors le package restant, redémarre,
+puis recharge l'intégration.
 
 ### Ce qui est perdu, et pourquoi
 

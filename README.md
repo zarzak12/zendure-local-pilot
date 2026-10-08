@@ -38,10 +38,10 @@ Dans les deux cas, la régulation tourne **dans le Shelly** : les étapes
 | Intégration Shelly officielle | inutile pour la régulation ; garde-la si tes compteurs d'énergie (Tempo, cumuls…) l'utilisent | requise (étape 4) |
 | Tableau de bord | [`dashboard_integration.yaml`](dashboard/dashboard_integration.yaml), à coller tel quel | à personnaliser avec `tools/personnaliser.ps1` |
 | Mises à jour | par HACS | à la main |
-| Suite des étapes | étapes 1 à 3, puis **[docs/INTEGRATION_HACS.md](docs/INTEGRATION_HACS.md)** | étapes 1 à 7 ci-dessous |
+| Suite des étapes | étapes 1 à 3, puis **[Option A](#option-a--intégration-hacs-recommandée)** | étapes 1 à 3, puis **[Option B](#option-b--packages-yaml)** (étapes 4 à 7) |
 
 Tu viens des packages YAML et veux passer à l'intégration ? Suis la section
-[Migration](docs/INTEGRATION_HACS.md#migration-depuis-les-packages-yaml) : ton
+[Migrer depuis les packages YAML](#migrer-depuis-les-packages-yaml) : ton
 historique, tes compteurs d'énergie et la santé mesurée de tes packs sont
 conservés.
 
@@ -57,6 +57,18 @@ conservés.
   - [Étape 1 — Activer l'API locale de la Zendure](#étape-1--activer-lapi-locale-de-la-zendure)
   - [Étape 2 — Préparer le Shelly Pro 3EM](#étape-2--préparer-le-shelly-pro-3em)
   - [Étape 3 — Installer le script de régulation dans le Shelly](#étape-3--installer-le-script-de-régulation-dans-le-shelly)
+- [Option A — Intégration HACS (recommandée)](#option-a--intégration-hacs-recommandée)
+  - [A1 — Vérifier les prérequis](#a1--vérifier-les-prérequis)
+  - [A2 — Ajouter le dépôt dans HACS](#a2--ajouter-le-dépôt-dans-hacs)
+  - [A3 — Télécharger l'intégration](#a3--télécharger-lintégration)
+  - [A4 — Ajouter l'intégration](#a4--ajouter-lintégration)
+  - [A5 — Vérifier que tout est en place](#a5--vérifier-que-tout-est-en-place-5-minutes)
+  - [A6 — Installer le tableau de bord](#a6--installer-le-tableau-de-bord)
+  - [A7 — Régler la régulation](#a7--régler-la-régulation)
+  - [A8 — Mettre à jour](#a8--mettre-à-jour)
+  - [Migrer depuis les packages YAML](#migrer-depuis-les-packages-yaml)
+  - [Dépannage de l'intégration](#dépannage-de-lintégration)
+- [Option B — Packages YAML](#option-b--packages-yaml)
   - [Étape 4 — Ajouter le Shelly à Home Assistant](#étape-4--ajouter-le-shelly-à-home-assistant)
   - [Étape 5 — Installer les packages Home Assistant](#étape-5--installer-les-packages-home-assistant)
   - [Étape 6 — Renseigner l'IP du Shelly et le canal de la pince](#étape-6--renseigner-lip-du-shelly-et-le-canal-de-la-pince)
@@ -250,19 +262,35 @@ et ne la réveille que si la consigne dépasse le *seuil de réveil*.
 
 | Composant | Version minimale | Note |
 |---|---|---|
-| Home Assistant | 2024.10+ | `default_entity_id` sur les templates demande 2025.x, voir [Dépannage](#dépannage) |
-| Firmware Shelly | 1.0.0+ | nécessaire pour les **composants virtuels** et le **KVS** |
-| HACS | — | uniquement pour le dashboard |
-| `apexcharts-card` | — | via HACS, uniquement pour les graphiques |
+| Home Assistant | 2024.11+ (intégration) · 2024.10+ (YAML) | en YAML, `default_entity_id` sur les templates demande 2025.x, voir [Dépannage](#dépannage) |
+| Firmware Shelly | 1.0.0+ | nécessaire pour les **composants virtuels** et le **KVS** ; 2.x pris en charge |
+| [HACS](https://hacs.xyz) | — | pour l'intégration, et pour `apexcharts-card` |
+| `apexcharts-card` | — | via HACS, uniquement pour les graphiques du tableau de bord |
 
 ### Compétences
 
-- Savoir éditer `configuration.yaml` (via l'add-on **File Editor**, **Studio Code Server** ou SSH)
-- Savoir redémarrer Home Assistant
+- Savoir redémarrer Home Assistant et installer un dépôt dans HACS
+- Pour l'option YAML seulement : savoir éditer `configuration.yaml` (via l'add-on
+  **File Editor**, **Studio Code Server** ou SSH)
 
 ---
 
 ## Installation pas à pas
+
+L'installation se fait en deux temps :
+
+1. **Le matériel, commun à tous** : [étapes 1 à 3](#étape-1--activer-lapi-locale-de-la-zendure)
+   ci-dessous. Elles mettent la régulation en place dans le Shelly. À ce
+   stade, l'autoconsommation fonctionne déjà, même sans Home Assistant.
+2. **Home Assistant, au choix** :
+   - **[Option A — Intégration HACS](#option-a--intégration-hacs-recommandée)**
+     (recommandée) : un formulaire, un tableau de bord à coller tel quel,
+     des mises à jour automatiques ;
+   - **[Option B — Packages YAML](#option-b--packages-yaml)** : la méthode
+     historique, étapes 4 à 7.
+
+Tu as déjà les packages YAML et tu veux passer à l'intégration ? Fais
+directement la [migration](#migrer-depuis-les-packages-yaml).
 
 ### Étape 1 — Activer l'API locale de la Zendure
 
@@ -421,6 +449,271 @@ composant `Zendure*` en doublon. Le Shelly plafonne à 10 composants virtuels.
 Vérifie-les dans l'onglet **Components / Virtual components** du Shelly.
 
 ---
+
+## Option A — Intégration HACS (recommandée)
+
+L'intégration **Zendure Local Pilot** remplace les packages YAML : un
+formulaire à remplir, des identifiants d'entités identiques chez tout le
+monde, un tableau de bord à coller tel quel, et des mises à jour par HACS,
+**script du Shelly compris**.
+
+Ce qui ne change pas : la régulation tourne toujours **dans le Shelly**.
+L'intégration règle, supervise et protège, mais ne régule pas. Si Home
+Assistant s'arrête, l'autoconsommation continue.
+
+> **Bêta.** Elle est en service sur une SolarFlow 4000 MIX PRO avec un Shelly
+> Pro 3EM en firmware 2.0.1. Si tu rencontres un problème, la
+> [section Dépannage](#dépannage-de-lintégration) liste ceux déjà rencontrés.
+> La référence complète (entités, services, comportements) est dans
+> [docs/INTEGRATION_HACS.md](docs/INTEGRATION_HACS.md).
+
+### A1 — Vérifier les prérequis
+
+Avant de commencer, assure-toi que :
+
+- [ ] **les étapes 1 à 3 sont faites** : `curl http://IP_ZENDURE/properties/report`
+      répond un JSON, et le script tourne dans le Shelly (onglet **Scripts** :
+      *running*). Sans script, l'intégration refuse de s'installer ;
+- [ ] **le Shelly a une IP fixe** (réservation DHCP), c'est la seule adresse
+      que tu saisiras ;
+- [ ] **Home Assistant est en 2024.11 ou plus récent** (Paramètres →
+      À propos) ;
+- [ ] **HACS est installé** ([hacs.xyz](https://hacs.xyz)).
+
+Tu viens des packages YAML ? Ne suis pas les étapes A2 à A5 telles quelles :
+fais la [migration](#migrer-depuis-les-packages-yaml), qui les reprend dans
+le bon ordre.
+
+### A2 — Ajouter le dépôt dans HACS
+
+1. Ouvre **HACS**, puis le menu **⋮** en haut à droite → **Dépôts
+   personnalisés**.
+2. **Dépôt** : `https://github.com/zarzak12/zendure-local-pilot`
+   — l'adresse du dépôt **seule**, sans `/tree/…` ni nom de branche.
+3. **Type** : **Intégration** → **Ajouter**.
+
+> ⚠️ « Repository structure for vX is not compliant » : l'adresse contient
+> `/tree/…`, ou HACS a gardé en cache une ancienne version. Supprime le
+> dépôt de la liste (corbeille) et ajoute-le de nouveau, avec l'adresse
+> exacte ci-dessus.
+
+### A3 — Télécharger l'intégration
+
+1. Dans HACS, cherche **Zendure Local Pilot** et ouvre-la.
+2. **Télécharger** → garde la version proposée (la plus récente) →
+   **Télécharger**.
+3. **Redémarre Home Assistant** : Paramètres → Système → ⏻ en haut à droite →
+   *Redémarrer Home Assistant*. Indispensable : sans redémarrage,
+   l'intégration n'apparaît pas.
+
+### A4 — Ajouter l'intégration
+
+1. **Paramètres → Appareils et services** → **+ Ajouter une intégration**
+   (en bas à droite) → tape **Zendure** → **Zendure Local Pilot**.
+2. Remplis le formulaire :
+
+   | Champ | Quoi mettre |
+   |---|---|
+   | **Adresse IP du Shelly** | l'IP fixe du Shelly Pro 3EM. Celle de la batterie n'est pas demandée : le script la découvre |
+   | **Nombre de packs batterie** | le nombre de packs réellement présents (1 pour une 4000 MIX PRO sans extension). En trop, les packs absents apparaissent indisponibles |
+   | **Reprendre les entités de la version YAML** | **coché** si tu migres depuis les packages, sans effet sinon |
+
+3. **Valider**. L'intégration vérifie le Shelly avant de créer quoi que ce
+   soit :
+
+   | Message | Signification | Que faire |
+   |---|---|---|
+   | *Aucune réponse à cette adresse* | Shelly injoignable | vérifie l'IP (navigateur : `http://IP_SHELLY`) |
+   | *Cet appareil a répondu, mais ce n'est pas un Shelly* | mauvaise IP | celle du Shelly, pas celle de la batterie |
+   | *Aucun script de régulation Zendure trouvé* | script absent | refais l'[étape 3](#étape-3--installer-le-script-de-régulation-dans-le-shelly) ; son nom doit contenir « zendure » |
+   | *Unknown error occurred* | bug | voir [Dépannage](#dépannage-de-lintégration) et les journaux |
+
+Un appareil **« Zendure &lt;ton modèle&gt; »** apparaît, avec toutes ses
+entités. Elles sont toutes nommées `…zendure_solarflow4000mix_…` quel que soit
+ton modèle : c'est voulu, c'est ce qui rend le tableau de bord universel.
+
+### A5 — Vérifier que tout est en place (5 minutes)
+
+Ouvre **Paramètres → Appareils et services → Zendure Local Pilot → l'appareil**
+et contrôle :
+
+| Où | Entité | Attendu |
+|---|---|---|
+| Capteurs | **Script état** | *En marche* |
+| Diagnostic | **Script version** | la dernière version. Si le script de ton Shelly était plus ancien, l'intégration l'a **mis à jour toute seule** au démarrage (quelques secondes, réglages conservés) |
+| Diagnostic | **Script CPU** | au-dessus de 0 % dans un mode régulé |
+| Capteurs | **Liaison batterie** | *Connecté* |
+| Contrôles | **Mode** | ton mode habituel (*Autoconsommation* pour un usage normal) |
+| Capteurs | **Réseau** | la même valeur que la pince du Shelly, au signe près (+ soutirage, − injection) |
+
+Puis vérifie la **pince** : **Configuration → Pince réseau lue**. Elle vaut 0
+par défaut. Si ton arrivée générale est sur la 2e ou la 3e pince, choisis-la
+maintenant (*Pince 2 (em1:1)* ou *Pince 3 (em1:2)*). Pour savoir laquelle :
+allume un gros appareil et regarde quelle pince suit, dans l'interface du
+Shelly ou dans l'intégration Shelly officielle. Le réglage est enregistré dans
+le Shelly et survit à toutes les mises à jour.
+
+Enfin, **Paramètres → Système → Réparations** ne doit rien signaler.
+
+### A6 — Installer le tableau de bord
+
+1. **apexcharts-card**, pour les graphiques : HACS → cherche
+   `apexcharts-card` (catégorie Tableau de bord) → **Télécharger**, puis
+   recharge la page du navigateur (**Ctrl+F5**).
+2. Ouvre [dashboard/dashboard_integration.yaml](dashboard/dashboard_integration.yaml)
+   sur GitHub → bouton **Copy raw file** (icône de copie). HACS ne télécharge
+   que l'intégration, pas ce fichier.
+3. Crée un tableau de bord : **Paramètres → Tableaux de bord → + Ajouter un
+   tableau de bord** → *Nouveau tableau de bord à partir de zéro* → nomme-le
+   (par exemple « Batterie ») → ouvre-le.
+4. ✏️ **Modifier** → **⋮** → **Modifier en YAML** → remplace tout le contenu
+   par ce que tu as copié → **Enregistrer**.
+
+Rien à personnaliser. Tu obtiens 4 vues : **Zendure** (flux, SOC, packs),
+**Santé**, **Historique** et **Réglages**. Ce dernier réunit tous les réglages
+de la régulation, l'état du script du Shelly et les boutons *Relancer* /
+*Redéployer*.
+
+Pour **ajouter** ces vues à un tableau de bord existant plutôt que d'en créer
+un, ne colle que le contenu de la clé `views:` à la suite des tiennes.
+
+### A7 — Régler la régulation
+
+Tout se règle depuis l'appareil ou l'onglet **Réglages** du tableau de bord :
+
+| Réglage | Entité | Pour |
+|---|---|---|
+| Mode | `select.…_mode` | Autoconsommation, Charge seule, Décharge seule, Manuel, Arrêt |
+| Plafonds | `number.…_decharge_max`, `…_charge_max` | limiter la puissance (± 3000 W par exemple) |
+| Marges | `number.…_buffer`, `…_buffer_charge` | viser un léger soutirage (+) ou une légère injection (−) |
+| Veille | `number.…_delai_veille` | minutes à 0 W avant la veille profonde (0 = jamais) |
+| Bornes SOC | `number.…_soc_min_consigne`, `…_soc_max_consigne` | écrites dans la batterie (mémoire flash) |
+| Réglages fins | catégorie *Configuration* | gain, zone morte, hystérésis, bascule, lissage : voir [Référence des réglages](#référence-des-réglages) |
+
+L'interrupteur **Régulation** arrête le script du Shelly ; la batterie est
+alors remise à 0 W.
+
+Dans **Configurer** (sur la carte de l'intégration) : IP du Shelly, nombre de
+packs, et **mise à jour automatique du script**. Désactive-la si tu as
+modifié le script à la main (profil triphasé, par exemple), sinon ta
+modification sera remplacée à la prochaine mise à jour.
+
+### A8 — Mettre à jour
+
+1. HACS signale la nouvelle version (et *Paramètres → Mises à jour*).
+2. **Mettre à jour** → **redémarre Home Assistant**.
+3. Si la nouvelle version apporte un nouveau script, il est poussé sur le
+   Shelly **automatiquement** au démarrage, vérifié par relecture, réglages
+   conservés. Sinon, rien ne se passe côté Shelly.
+
+En cas d'échec de la mise à jour du script, une alerte apparaît dans
+*Réparations*, et l'entité **Script de régulation** de *Paramètres → Mises à
+jour* permet de relancer l'installation d'un clic.
+
+---
+
+### Migrer depuis les packages YAML
+
+L'historique, les statistiques long terme, les compteurs d'énergie et la santé
+mesurée des packs sont **conservés** : l'intégration reprend les mêmes
+identifiants d'entités, et relit à l'installation la dernière valeur des
+compteurs et des capacités mesurées. **L'ordre des étapes compte.**
+
+1. **Sauvegarde** : Paramètres → Système → Sauvegardes → *Créer une
+   sauvegarde*. C'est ton retour arrière.
+2. **Télécharge l'intégration** ([A2](#a2--ajouter-le-dépôt-dans-hacs) et
+   [A3](#a3--télécharger-lintégration)), **sans redémarrer** pour l'instant.
+3. **Retire les 4 packages** de `/config/packages/` (File Editor ou Studio
+   Code Server), en les gardant de côté :
+   - `zendure_solarflow4000mix.yaml`
+   - `zendure_solarflow4000mix_dashboard.yaml`
+   - `zendure_solarflow4000mix_reglages.yaml`
+   - `zendure_solarflow4000mix_sante.yaml`
+
+   **Les 4**, sans exception : un package resté chargé garde ses entités, et
+   l'intégration doit alors se rabattre sur des identifiants en `_2`. La
+   ligne `packages: !include_dir_named packages` de `configuration.yaml` peut
+   rester.
+4. **Garde l'intégration Shelly officielle** si tu l'as : tes compteurs
+   d'énergie (Tempo, cumuls…) basés sur la pince en dépendent. Elle cohabite
+   avec l'intégration Zendure.
+5. **Redémarre Home Assistant.**
+6. **Ajoute l'intégration** ([A4](#a4--ajouter-lintégration)), case
+   **« Reprendre les entités de la version YAML » cochée**.
+7. **Vérifie la reprise** :
+   - **Réparations** : aucune alerte « Les packages YAML sont encore
+     chargés ». Sinon, un package est resté : retire-le, redémarre, puis
+     recharge l'intégration ;
+   - `sensor.zendure_solarflow4000mix_energie_chargee` affiche une valeur
+     proche de celle d'avant, et non 0 ;
+   - **Pack 1 santé** affiche ta santé mesurée, si tu en avais une ;
+   - puis les contrôles de l'étape [A5](#a5--vérifier-que-tout-est-en-place-5-minutes).
+8. **Remplace le tableau de bord** par `dashboard_integration.yaml`
+   ([A6](#a6--installer-le-tableau-de-bord)).
+9. **Fais le ménage** : Paramètres → Entités, filtre
+   `zendure_solarflow4000mix`, et supprime celles marquées *n'est plus
+   fournie* (`raw`, `reseau_shelly`, `config_shelly`…) : des capteurs internes
+   de la version YAML.
+10. **Mets à jour tes propres automatisations**, s'il y a lieu :
+
+    | Avant (YAML) | Après (intégration) |
+    |---|---|
+    | `input_number.zendure_solarflow4000mix_…` | `number.zendure_solarflow4000mix_…` |
+    | `sensor.zendure_solarflow4000mix_reseau_shelly` | `sensor.zendure_solarflow4000mix_reseau` |
+    | `script.zendure_solarflow4000mix_set_power` | action `zendure_local_pilot.set_power` |
+    | entités `shellypro3em_…_zendure_*` | inchangées si tu gardes l'intégration Shelly officielle, sinon `select.zendure_solarflow4000mix_mode`, etc. |
+
+    Les automatisations de la version YAML (repli de sécurité, synchronisations,
+    santé des packs…) n'ont pas à être recréées : l'intégration les fait.
+
+**Ce qui est perdu** : l'historique des curseurs de réglage (ils passent
+d'`input_number` à `number`, l'identifiant change), et les compteurs **du
+jour** (PV du jour, commutations, zéro soutirage), qui repartent de zéro le
+jour de la migration.
+
+**Retour arrière** : supprime l'intégration, remets les 4 packages,
+redémarre. L'historique des mesures est conservé dans tous les cas.
+
+---
+
+### Dépannage de l'intégration
+
+| Symptôme | Cause | Solution |
+|---|---|---|
+| HACS : *Repository structure for vX is not compliant* | adresse avec `/tree/…`, ou cache HACS | supprime le dépôt et ajoute `https://github.com/zarzak12/zendure-local-pilot` |
+| Formulaire : *Unknown error occurred* (Shelly en firmware 2.x) | version < 1.3.2 | mets l'intégration à jour, redémarre |
+| **Mode** *unknown*, curseurs vides (firmware 2.x) | version < 1.3.5 | mets à jour, redémarre |
+| Mise à jour du script : *Length should be greater than 0* | version < 1.3.3 | **relance d'abord la régulation** (interrupteur *Régulation*), puis mets à jour |
+| Batterie *en défaut* alors que l'application Zendure est OK | version < 1.3.6 | mets à jour, redémarre |
+| Entités en `_2`, alerte *Les packages YAML sont encore chargés* | un package YAML est encore chargé | retire-le (étape 3 de la migration), redémarre, recharge l'intégration |
+| Journal : *config_shelly is longer than 255* | le package `…_reglages.yaml` est encore chargé | retire-le |
+| Statistiques de *commutations* suspendues après migration | version < 1.3.4 | mets à jour : elles reprennent d'elles-mêmes |
+| **Script état** *Arrêté*, batterie à 0 W | script du Shelly arrêté ; l'intégration a appliqué le repli de sécurité | allume **Régulation**, ou bouton **Relancer le script** ; regarde la console du Shelly si ça recommence |
+| **Script en erreur** | plantage signalé par le Shelly (message en attribut de *Script état*) | bouton **Redéployer le script** |
+| **Script CPU** à 0 % en mode régulé | script tronqué | bouton **Redéployer le script** |
+| La puissance **Réseau** ne suit pas la consommation de la maison | mauvaise pince | **Pince réseau lue** (voir [A5](#a5--vérifier-que-tout-est-en-place-5-minutes)) |
+| Mise à jour du script en échec (alerte *Réparations*) | Shelly occupé ou injoignable | *Paramètres → Mises à jour → Script de régulation → Installer* |
+
+**Journaux** : Paramètres → Système → Journaux, filtre `zendure_local_pilot`.
+Pour plus de détails, ajoute à `configuration.yaml` puis redémarre :
+
+```yaml
+logger:
+  logs:
+    custom_components.zendure_local_pilot: debug
+```
+
+Pour signaler un problème, [ouvre une issue](https://github.com/zarzak12/zendure-local-pilot/issues)
+avec ces journaux, ta version de firmware Shelly et la sortie de
+`curl -s http://IP_BATTERIE/properties/report` (masque ton `sn`).
+
+---
+
+## Option B — Packages YAML
+
+La méthode historique, toujours prise en charge : des fichiers YAML copiés
+dans ta configuration. Elle demande l'intégration Shelly officielle et un
+tableau de bord personnalisé à ton Shelly.
 
 ### Étape 4 — Ajouter le Shelly à Home Assistant
 
@@ -635,8 +928,7 @@ Passe le mode en **Manuel** et écris la consigne :
 > **Tu utilises l'intégration HACS ?** Rien de ce qui suit ne te concerne :
 > mets à jour l'intégration dans HACS, redémarre Home Assistant, et le
 > nouveau script est poussé tout seul sur le Shelly (ou d'un clic dans
-> *Paramètres → Mises à jour*). Voir
-> [Mise à jour du script du Shelly](docs/INTEGRATION_HACS.md#mise-à-jour-du-script-du-shelly).
+> *Paramètres → Mises à jour*). Voir [A8 — Mettre à jour](#a8--mettre-à-jour).
 
 Un correctif a été publié sur GitHub et le projet est déjà installé chez toi ?
 Voici la marche à suivre. **Aucun de tes réglages n'est perdu** — la procédure
