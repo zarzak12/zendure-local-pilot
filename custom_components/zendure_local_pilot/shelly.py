@@ -130,15 +130,30 @@ class ClientShelly:
 
         Le découpage se fait en CARACTÈRES : couper en octets tranche les
         accents en deux, et leurs moitiés seraient perdues à l'écriture.
+
+        Le premier morceau REMPLACE le code (append False), les suivants
+        s'ajoutent. Pas de « vidage » préalable par un code vide : le firmware
+        2.x le refuse (« Length should be greater than 0 »).
         """
         code = code.replace("\r\n", "\n")   # le Shelly stocke en LF
+        if not code:
+            raise ErreurShelly("script vide : rien à déployer")
         await self.appel("Script.Stop", {"id": ident})
-        await self.appel("Script.PutCode", {"id": ident, "code": "", "append": False})
-        for debut in range(0, len(code), TAILLE_MORCEAU):
-            await self.appel(
-                "Script.PutCode",
-                {"id": ident, "code": code[debut:debut + TAILLE_MORCEAU], "append": True},
-            )
+        ecrit = False
+        try:
+            for debut in range(0, len(code), TAILLE_MORCEAU):
+                await self.appel(
+                    "Script.PutCode",
+                    {"id": ident, "code": code[debut:debut + TAILLE_MORCEAU],
+                     "append": debut > 0},
+                )
+                ecrit = True
+        except ErreurShelly:
+            if not ecrit:
+                # Rien n'a été écrit : l'ancien code est intact, on le relance
+                # plutôt que de laisser la régulation à l'arrêt.
+                await self._relancer_sans_echec(ident)
+            raise
         relu = await self.script_lire(ident)
         if relu != code:
             ecart = next((i for i, (a, b) in enumerate(zip(relu, code)) if a != b),
@@ -152,6 +167,13 @@ class ClientShelly:
         await self.appel("Script.SetConfig", {"id": ident, "config": {"enable": True}})
         await self.appel("Script.Start", {"id": ident})
         _LOGGER.info("script %s redéployé (%d caractères)", ident, len(code))
+
+    async def _relancer_sans_echec(self, ident: int) -> None:
+        try:
+            await self.appel("Script.Start", {"id": ident})
+            _LOGGER.warning("déploiement interrompu avant écriture : ancien script relancé")
+        except ErreurShelly as err:
+            _LOGGER.error("ancien script NON relancé après l'échec du déploiement : %s", err)
 
     async def script_lire(self, ident: int) -> str:
         """Relit le code complet. GetCode pagine, en OCTETS."""

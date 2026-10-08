@@ -606,6 +606,72 @@ def test_ecriture_persistante_retablit_smartmode():
     assert veilles == [2], "la batterie a besoin d'un délai avant le rétablissement"
 
 
+class _FauxShelly2x:
+    """Comportement du firmware 2.x, constaté en réel : PutCode refuse un code
+    vide, GetCode pagine en octets."""
+
+    def __init__(self, panne_au_putcode=None):
+        self.stock, self.appels, self.panne = b"", [], panne_au_putcode
+        self.n_putcode = 0
+
+    async def appel(self, m, p=None):
+        shelly = sys.modules["zlp.shelly"]
+        self.appels.append(m)
+        if m == "Script.PutCode":
+            self.n_putcode += 1
+            if not p["code"]:
+                raise shelly.ErreurShelly(
+                    "Script.PutCode : {'code': -103, 'message': \"Invalid argument "
+                    "'code': Length should be greater than 0!\"}")
+            if self.panne == self.n_putcode:
+                raise shelly.ErreurShelly("panne simulée")
+            self.stock = (self.stock if p["append"] else b"") + p["code"].encode()
+        elif m == "Script.GetCode":
+            page = self.stock[p["offset"]:p["offset"] + p["len"]]
+            return {"data": page.decode("utf-8", errors="replace"),
+                    "left": max(0, len(self.stock) - p["offset"] - len(page))}
+        return {}
+
+
+def _client(faux):
+    shelly = sys.modules["zlp.shelly"]
+    client = shelly.ClientShelly(None, "192.168.1.41")
+    client.appel = faux.appel
+    return client
+
+
+def test_deploiement_accepte_par_le_firmware_2x():
+    import asyncio
+    faux = _FauxShelly2x()
+    faux.stock = "ancien code".encode()
+    asyncio.run(_client(faux).script_deployer(1, _script()))
+    assert faux.stock.decode() == _script().replace("\r\n", "\n")   # ancien code remplacé
+    assert faux.appels[-2:] == ["Script.SetConfig", "Script.Start"]
+
+
+def test_echec_avant_ecriture_relance_l_ancien_script():
+    """Constaté en réel : un échec dès la 1re écriture laissait le script
+    arrêté, et la batterie à 0 W, alors que son code était intact."""
+    import asyncio
+    shelly = sys.modules["zlp.shelly"]
+    faux = _FauxShelly2x(panne_au_putcode=1)
+    faux.stock = "ancien code".encode()
+    try:
+        asyncio.run(_client(faux).script_deployer(1, _script()))
+        raise AssertionError("l'échec aurait dû remonter")
+    except shelly.ErreurShelly:
+        pass
+    assert faux.stock == "ancien code".encode()
+    assert faux.appels[-1] == "Script.Start", faux.appels
+    # Échec en cours d'écriture : code partiel, le script reste arrêté
+    faux = _FauxShelly2x(panne_au_putcode=3)
+    try:
+        asyncio.run(_client(faux).script_deployer(1, _script()))
+    except shelly.ErreurShelly:
+        pass
+    assert "Script.Start" not in faux.appels
+
+
 def test_kvs_lu_quel_que_soit_le_firmware():
     """Firmware 2.x : KVS.GetMany renvoie une LISTE. Constaté en réel sur un
     Pro 3EM en 2.0.1, où l'ancien code faisait échouer l'installation."""
