@@ -139,16 +139,14 @@ rest:
       - name: Zendure SolarFlow4000Mix config shelly
         unique_id: zendure_solarflow4000mix_config_shelly
         icon: mdi:cog-transfer
-        # État = dictionnaire JSON {cle: valeur} (formats KVS ancien et récent)
-        value_template: >-
-          {% set it = value_json['items'] %}
-          {% set ns = namespace(d={}) %}
-          {% if it is mapping %}
-            {% for k, v in it.items() %}{% set ns.d = dict(ns.d, **{k: v.value}) %}{% endfor %}
-          {% else %}
-            {% for x in it %}{% set ns.d = dict(ns.d, **{x.key: x.value}) %}{% endfor %}
-          {% endif %}
-          {{ ns.d | to_json }}
+        # Les réglages sont dans l'ATTRIBUT « items », tels que renvoyés par le
+        # Shelly (dictionnaire en firmware 1.x, liste en 2.x). Pas dans l'état :
+        # Home Assistant le limite à 255 caractères, que le JSON des réglages
+        # dépasse ; l'état retombait alors à « unknown » et plus rien n'était
+        # synchronisé. L'état ne porte que le nombre de réglages lus.
+        value_template: "{{ value_json['items'] | count }}"
+        json_attributes:
+          - items
 
 # ---- Écriture d'une clé KVS ----
 rest_command:
@@ -177,7 +175,16 @@ automation:
           entity_id: sensor.zendure_solarflow4000mix_config_shelly
       - delay: 3
       - variables:
-          cfg: "{{ states('sensor.zendure_solarflow4000mix_config_shelly') | from_json(default={}) }}"
+          # {clé: valeur}, quel que soit le format du firmware
+          cfg: >-
+            {% set it = state_attr('sensor.zendure_solarflow4000mix_config_shelly', 'items') %}
+            {% set ns = namespace(d={}) %}
+            {% if it is mapping %}
+              {% for k, v in it.items() %}{% set ns.d = dict(ns.d, **{k: v.value}) %}{% endfor %}
+            {% elif it is iterable and it is not string %}
+              {% for x in it %}{% set ns.d = dict(ns.d, **{x.key: x.value}) %}{% endfor %}
+            {% endif %}
+            {{ ns.d }}
       - condition: template
         value_template: "{{ cfg is mapping and cfg | count > 0 }}"
       - action: input_text.set_value
@@ -283,12 +290,17 @@ automation:
     alias: Zendure SolarFlow4000Mix – IP découverte → HA
     mode: single
     triggers:
+      # Sans « to » : se déclenche aussi quand seul l'attribut change, ce qui
+      # est le cas d'un changement d'IP (l'état, un simple compte, ne bouge pas).
       - trigger: state
         entity_id: sensor.zendure_solarflow4000mix_config_shelly
     variables:
       ip: >-
-        {{ (states('sensor.zendure_solarflow4000mix_config_shelly')
-            | from_json(default={})).get('zendure_ip', '') }}
+        {% set it = state_attr('sensor.zendure_solarflow4000mix_config_shelly', 'items') %}
+        {% if it is mapping %}{{ (it.get('zendure_ip') or {}).get('value', '') }}
+        {% elif it is iterable and it is not string %}
+          {{ (it | selectattr('key', 'eq', 'zendure_ip') | map(attribute='value') | list + [''])[0] }}
+        {% endif %}
     conditions:
       - condition: template
         value_template: >-

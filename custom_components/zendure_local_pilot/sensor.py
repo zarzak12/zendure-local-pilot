@@ -401,10 +401,15 @@ CAPTEURS: tuple[DescriptionCapteur, ...] = (
           native_unit_of_measurement=PERCENTAGE, state_class=MESURE),
     _memo("efficacite_decharge_24h", "efficacité décharge 7 j", lambda m: m.efficacite_decharge_7j,
           native_unit_of_measurement=PERCENTAGE, state_class=MESURE),
+    # Unité vide "" et non absente : c'est celle que history_stats leur donnait
+    # dans la version YAML. Sans unité, Home Assistant la jugerait différente
+    # de celle des statistiques déjà compilées et les suspendrait.
     _memo("commutations_charge_jour", "commutations charge jour",
-          lambda m: m.commutations_charge, state_class=MESURE, icon="mdi:swap-vertical-bold"),
+          lambda m: m.commutations_charge, state_class=MESURE, icon="mdi:swap-vertical-bold",
+          native_unit_of_measurement=""),
     _memo("commutations_decharge_jour", "commutations décharge jour",
-          lambda m: m.commutations_decharge, state_class=MESURE, icon="mdi:swap-vertical-bold"),
+          lambda m: m.commutations_decharge, state_class=MESURE, icon="mdi:swap-vertical-bold",
+          native_unit_of_measurement=""),
     _memo("commutations_jour", "commutations jour",
           lambda m: m.commutations_charge + m.commutations_decharge,
           state_class=MESURE, icon="mdi:swap-vertical-bold"),
